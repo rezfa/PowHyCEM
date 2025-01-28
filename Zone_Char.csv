@@ -1,0 +1,4 @@
+﻿Zones,Pow_NSD_Share,HSC_NSD_Share,Voll_Pow,Voll_HSC,Available_Land,Emission_Cap_Tonne_CO2,Emission_cost
+1,0.1,0.05,2000,50000,1000,200,400
+2,0.1,0.05,3000,60000,2000,300,320
+3,0.1,0.05,4000,34000,3000,400,300
