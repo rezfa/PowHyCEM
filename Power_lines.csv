@@ -1,4 +1,4 @@
-﻿Lines,Line_type,z1,z2,z3,Existing_cap_MW,investment_cost_per_cap,FOM_per_cap,VOM_per_unit_Tra,Distance,Line_Loss_percentage,land_use
-1,1,1,1,0,300,100,20,2,200,0.002,0.03
-2,1,1,0,1,300,100,20,2,120,0.002,0.03
-3,1,0,1,1,200,100,20,2,140,0.002,0.03
+﻿Lines,Line_type,z1,z2,z3,Existing_cap_MW,Max_Tra_Cap,investment_cost_per_cap,FOM_per_cap,VOM_per_unit_Tra,Distance,Line_Loss_percentage,land_use
+1,1,1,1,0,300,-1,100,20,2,200,0.002,0.03
+2,1,1,0,1,300,-1,100,20,2,120,0.002,0.03
+3,1,0,1,1,200,-1,100,20,2,140,0.002,0.03
