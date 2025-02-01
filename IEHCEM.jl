@@ -1,7 +1,7 @@
 using JuMP, Gurobi, DataFrames, CSV
 
 
-datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/")
+datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
 
 
 ###Loading Data from CSV files###
