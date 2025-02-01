@@ -1,4 +1,4 @@
 ,Network_zones,Network_Lines,z1,z2,z3,Line_Max_Flow_MW,transmission_path_name,distance_Km,Line_Loss_Percentage,Line_Max_Reinforcement_MW,Line_Reinforcement_Cost_per_MWyr,Existing_Transmission_Cap_MW
 NL,z1,1,1,-1,0,5552,NL_to_Ger,552.534,0.04914512,27760,35910,1230
 Ger,z2,2,0,1,-1,1915,Ger_toBel,1341.33,0.047366255,9575,55639,3221
-Bel,z3,3,1,0,-1,850,NL_to_Bel,342.231,0.047366255,1231,35910,3214.43
+Bel,z3,3,-1,0,1,850,NL_to_Bel,342.231,0.047366255,12350,35910,3200
