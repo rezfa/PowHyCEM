@@ -25,7 +25,7 @@ fuel = CSV.read(joinpath(datadir, "Fuels_data.csv"), DataFrame)
 zones = CSV.read(joinpath(datadir, "Zone_Char.csv"), DataFrame)
 
 #rename all columns to lower Case
-for f in [pow_gen, pow_load, pow_lines, pow_network, hsc_gen, hsc_load, hsc_pipelines, fuel, zones]
+for f in [pow_gen, pow_load, pow_lines, hsc_gen, hsc_load, hsc_pipelines, fuel, zones]
     rename!(f,lowercase.(names(f)))
 end
 
@@ -49,13 +49,6 @@ dfStor = pow_gen[pow_gen[!, :stor_type].> 0, :] #set of all power storages
 dfH2Gen = hsc_gen[hsc_gen[!, :h_gen_type].>= 1, :] #set of all H2 Generators
 dfH2Stor = hsc_gen[hsc_gen[!, :h_stor].>= 1, :]
 
-start_p = findall(s -> s == "load_mw_z1", names(pow_load))[1]
-pow_demand = Matrix(pow_load[1:length(T), start_p:start_p + length(Z)-1])
-
-start_h = findall(s -> s == "load_hsc_tonne_z1", names(hsc_load))[1]
-h2_demand = Matrix(hsc_load[1:length(T), start_h:start_h + length(Z)-1])
-### Create Solving Function ###
-
 # Defining Sets
 G = dfGen.r_id
 S = pow_gen[pow_gen[!, :stor_type].> 0, :r_id] #set of all power storages
@@ -65,12 +58,17 @@ T = pow_load[1:24, :time_index]
 K = dfGen[dfGen[!, :gen_type] .==1, :r_id]
 R = dfGen[dfGen[!, :gen_type] .>1, :r_id]
 L = pow_lines.network_lines
-
 H = dfH2Gen[dfH2Gen[!, :h_gen_type].>= 1, :r_id]
 W = hsc_gen[hsc_gen[!, :h_stor].>= 1, :r_id]
 I = hsc_pipelines.hsc_pipelines
 J = hsc_gen[hsc_gen[!, :h_gen_type].== 1, :r_id]
 E = hsc_gen[hsc_gen[!, :h_gen_type].==2, :r_id]
+
+start_p = findall(s -> s == "load_mw_z1", names(pow_load))[1]
+pow_demand = Matrix(pow_load[1:length(T), start_p:start_p + length(Z)-1])
+
+start_h = findall(s -> s == "load_hsc_tonne_z1", names(hsc_load))[1]
+h2_demand = Matrix(hsc_load[1:length(T), start_h:start_h + length(Z)-1])
 
 fuels = names(fuel)[2:end]
 costs = Matrix(fuel[2:end, 2:end])
@@ -170,7 +168,8 @@ CEM = Model(Gurobi.Optimizer)
 # Power Generation Expressions #
 @expression(CEM, eTotPowGenCap[g in G], dfGen[dfGen[!, :r_id] .==g, :existing_cap] .+ vNewPowGenCap[g] .- vRetPowGenCap[g])
 @expression(CEM, ePowGenByZone[z in Z, t in T], sum(vPowGen[g, t] * (pow_gen[g, :zone] == z ? 1 : 0) for g in G))
-@expression(CEM, eAuxPowGen[g in K, t in T], vPowGen[g,t] .- eTotPowGenCap[g]*pow_gen[g,:min_op_level]*vPowGenCommit[g,t]) #Non-linear
+@expression(CEM, eAuxPowGen_var[g in K, t in T], eTotPowGenCap[g]*vPowGenCommit[g,t])
+@expression(CEM, eAuxPowGen[g in K, t in T], vPowGen[g,t] .-eAuxPowGen_var[g,t] * pow_gen[g,:min_op_level]) #Non-linear
 @expression(CEM, eTotPowGenCapByZone[z in Z], sum(eTotPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in K))
 @expression(CEM, ePowResReqUp[z in Z, t in T], 0.1 * eTotPowGenCapByZone[z] .+ 0.05 * pow_demand[t,z])
 @expression(CEM, ePowResReqDn[z in Z, t in T], 0.05 * pow_demand[t,z])
@@ -292,10 +291,27 @@ end
 @constraint(CEM, cMinDnTimePowGen[g in K, t in T], sum(vPowGenShut[g,tt] for tt in intersect(T, (t - pow_gen[g, :down_time]):t)) <= 1 - vPowGenCommit[g,t])
 @constraint(CEM, cPowGenCommitCon[g in K, t in 1:length(T)-1], vPowGenCommit[g,t+1]-vPowGenCommit[g,t] == vPowGenStart[g,t+1]-vPowGenShut[g,t+1])
 #Ramp and auxilary power generation constraints
-@constraint(CEM, cAuxPowGenRampUp[g in K,t in 1:length(T)-1], eAuxPowGen[g,t+1] .- eAuxPowGen[g,t] <= eTotPowGenCap[g]*pow_gen[g,:ramp_up])
+@constraint(CEM, [g in K, t in T], eAuxPowGen_var[g,t]<= eTotPowGenCap[g])
+for g in K
+  if pow_gen[g, :max_cap_mw] != -1
+    @constraint(CEM, [g in K, t in T], eAuxPowGen_var[g,t]<= vPowGenCommit[g,t]*pow_gen[g, :max_cap_mw])
+  else
+    @constraint(CEM, [g in K, t in T], eAuxPowGen_var[g,t]<= 10*eTotPowGenCap[g])
+  end
+end
+
+for g in K
+  if pow_gen[g, :max_cap_mw] != -1
+    @constraint(CEM, [g in K, t in T], eAuxPowGen_var[g,t]>= eTotPowGenCap[g] - pow_gen[g, :max_cap_mw]*(1-vPowGenCommit[g,t]))
+  else
+    @constraint(CEM, [g in K, t in T], eAuxPowGen_var[g,t] >= eTotPowGenCap[g] - 10*eTotPowGenCap[g]*(1-vPowGenCommit[g,t]))
+  end
+end
+
+@constraint(CEM, cAuxPowGenRampUp[g in K,t in 1:length(T)-1], eAuxPowGen[g,t+1] .- eAuxPowGen[g,t] <= eTotPowGenCap[g]*pow_gen[g,:ramp_up]) #For Thermal units
 @constraint(CEM, cAuxPowGenRampDn[g in K,t in 1:length(T)-1], eAuxPowGen[g,t] .- eAuxPowGen[g,t+1]  <= eTotPowGenCap[g]*pow_gen[g,:ramp_dn])
-@constraint(CEM, cPowGenRampUp[g in K, t in 1:length(T)-1], vPowGen[g,t+1] .- vPowGen[g,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_up]<= 0)
-@constraint(CEM, cPowGenRampDn[g in K, t in 1:length(T)-1], vPowGen[g,t] .- vPowGen[g,t+1] .- eTotPowGenCap[g]*pow_gen[g,:ramp_dn]<= 0)
+@constraint(CEM, cPowGenRampUp[g in R, t in 1:length(T)-1], vPowGen[g,t+1] .- vPowGen[g,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_up]<= 0)  # For Non-Thermal units
+@constraint(CEM, cPowGenRampDn[g in R, t in 1:length(T)-1], vPowGen[g,t] .- vPowGen[g,t+1] .- eTotPowGenCap[g]*pow_gen[g,:ramp_dn]<= 0)
 #Spinning Reserve Constraints
 @constraint(CEM, cPowResUpMax[g in K, t in T], vPowResUp[g,t] .+ vPowGen[g,t] .-  eTotPowGenCap[g]*pow_gen[g,:max_op_level]*vPowGenCommit[g,t] <=0) #Non-linear
 @constraint(CEM, cPowResDnMax[g in K, t in T], vPowResDn[g,t] .+ eTotPowGenCap[g]*pow_gen[g,:min_op_level]*vPowGenCommit[g,t] .- vPowGen[g,t] <= 0) #Non-linear
