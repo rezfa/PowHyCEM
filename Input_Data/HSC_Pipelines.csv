@@ -1,4 +1,4 @@
-﻿HSC_Pipelines,z1,z2,z3,Existing_capacity,Max_cap_tonne_p_hour,Investment_cost_per_length,Compressor_Inv_per_Length,FOM_per_length,FOM_Comp_p_tonne_hr,Pipe_loss_coeff,Distance,Min_op_level,Max_op_level,Comp_pow_MWh_per_tonne,Land_use_km2_p_length
-1,-1,1,0,50,200,250,100,15,1,0.03,55,0.2,1,12,0.01
-2,0,-1,1,50,200,250,100,15,1,0.03,67,0.2,1,12,0.01
-3,1,0,-1,50,200,250,100,15,1,0.03,23,0.2,1,12,0.01
+﻿HSC_Pipelines,z1,z2,z3,Existing_Num_Pipes,Max_num_pipes,Max_pipe_cap_tonne_p_hour,Investment_cost_per_length,Compressor_Inv_per_Length,FOM_per_length,FOM_Comp_p_tonne_hr,Pipe_loss_coeff,Distance,Min_op_level,Max_op_level,Comp_pow_MWh_per_tonne,Land_use_km2_p_length
+1,-1,1,0,10,50,50,250,100,15,1,0.03,55,0.2,1,12,0.01
+2,0,-1,1,10,50,50,250,100,15,1,0.03,67,0.2,1,12,0.01
+3,1,0,-1,10,50,50,250,100,15,1,0.03,23,0.2,1,12,0.01
