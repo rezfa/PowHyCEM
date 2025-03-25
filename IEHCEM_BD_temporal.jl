@@ -68,10 +68,16 @@ H_ther = hsc_gen[hsc_gen[!, :h_gen_type].== 1, :r_id]  #set of all thermal hydro
 H_dis = hsc_gen[hsc_gen[!, :h_gen_type].==2, :r_id]   #set of all renewable hydrogen generators
 
 start_p = findall(s -> s == "load_mw_z1", names(pow_load))[1]
-pow_demand = Matrix(pow_load[1:length(T), start_p:start_p + length(Z)-1])
+pow_demand = Dict{Int, Matrix}()
+for w in W
+  pow_demand[w] = Matrix(pow_load[H_w[w], start_p:start_p + length(Z)-1])
+end
 
 start_h = findall(s -> s == "load_hsc_tonne_z1", names(hsc_load))[1]
-h2_demand = Matrix(hsc_load[1:length(T), start_h:start_h + length(Z)-1])
+h2_demand = Dict{Int, Matrix}()
+for w in W
+  h2_demand[w] = Matrix(hsc_load[H_w[w], start_h:start_h + length(Z)-1])
+end
 
 fuels = names(fuel)[2:end]
 costs = Matrix(fuel[2:end, 2:end])
@@ -80,6 +86,7 @@ fuel_costs = Dict{AbstractString, Array{Float64}}()
 fuel_CO2 = Dict{AbstractString, Float64}()
 fuel_type = dfGen[!,:fuel]
 CO2_content
+
 for i = 1:length(fuels)
     fuel_costs[fuels[i]] = costs[:,i] 
     # fuel_CO2 is kton/MMBTU with scaling, or ton/MMBTU without scaling.
@@ -103,27 +110,29 @@ CEM = Model(Gurobi.Optimizer)
   #--------------------------------#
 ## Power Sector Decision Variables ##
   #--------------------------------#
-
+unregister(CEM, :vPowGenOnline)
 # Power Generation DV #
 @variable(CEM, vNewPowGenCap[g in G], Int)
 @variable(CEM, vRetPowGenCap[g in G], Int)
-@variable(CEM, vPowGen[g in G, t in T]>=0)
-@variable(CEM, vPowGenOnline[g in G_ther, t in T], Int)
-@variable(CEM, vPowGenStart[g in G_ther, t in T], Int)
-@variable(CEM, vPowGenShut[g in G_ther, t in T], Int)
-@variable(CEM, vPowResUp[g in G_ther, t in T]>=0)
-@variable(CEM, vPowResDn[g in G_ther, t in T]>=0)
+@variable(CEM, vPowGen[g in G, w in W, t in H_w[w]]>=0)
+@variable(CEM, vPowGenOnline[g in G_ther, w in W, t in H_w[w]], Int)
+@variable(CEM, vPowGenStart[g in G_ther, w in W, t in H_w[w]], Int)
+@variable(CEM, vPowGenShut[g in G_ther, w in W, t in H_w[w]], Int)
+#@variable(CEM, vPowResUp[g in G_ther, t in T]>=0)
+#@variable(CEM, vPowResDn[g in G_ther, t in T]>=0)
 
 # Power Storage DV #
 @variable(CEM, vNewPowStoCap[s in S], Int)
 @variable(CEM, vRetPowStoCap[s in S], Int)
-@variable(CEM, vPowStoCha[s in S, t in T]>=0)
-@variable(CEM, vPowStoDis[s in S, t in T]>=0)
-@variable(CEM, vPowSOC[s in S, t in 0:length(T)]>=0)
+@variable(CEM, vPowStoCha[s in S, w in W, t in H_w[w]]>=0)
+@variable(CEM, vPowStoDis[s in S, w in W, t in H_w[w]]>=0)
+@variable(CEM, vPowSOC[s in S, w in W, t in H_w[w]]>=0)
+
+#Adding starting t of week
 
 # Power Transmission DV #
 @variable(CEM, vNewPowTraCap[l in L], Int)
-@variable(CEM, vPowFlow[l in L, t in T])
+@variable(CEM, vPowFlow[l in L, w in W, t in H_w[w]])
 
 # Non-Served Power demand
 @variable(CEM, vPowNSD[z in Z, t in T]>=0)
