@@ -27,20 +27,6 @@ for f in [pow_gen, pow_load, pow_lines, hsc_gen, hsc_load, hsc_pipelines, fuel, 
     rename!(f,lowercase.(names(f)))
 end
 
-function value_to_df_2dim(var)
-    solution = DataFrame(var.data, :auto)
-    ax1 = var.axes[1]
-    ax2 = var.axes[2]
-    cols = names(solution)
-    insertcols!(solution, 1, :r_id => ax1)
-    solution = stack(solution, Not(:r_id), variable_name=:hour)
-    solution.hour = foldl(replace, [cols[i] => ax2[i] for i in 1:length(ax2)], init=solution.hour)
-    rename!(solution, :value => :gen)
-    solution.hour = convert.(Int64,solution.hour)
-    return solution
-end
-
-
 ###Constructing the  DataFrame###
 dfGen = pow_gen[pow_gen[!, :gen_type].>= 1, :] # set of all generators
 dfStor = pow_gen[pow_gen[!, :stor_type].> 0, :] #set of all power storages
@@ -56,6 +42,7 @@ Z = zones.zones
 W = collect(1:52)
 hours_per_week = 168
 H_w = [((w - 1) * hours_per_week + 1):(w * hours_per_week) for w in W]
+T = collect(1:168)
 G_ther = dfGen[dfGen[!, :gen_type] .==1, :r_id] #set of all thermal power units
 G_ren = dfGen[dfGen[!, :gen_type] .>1, :r_id] # set of all renewable dispatchable power units
 V = dfGen[dfGen[!, :gen_type].==3, :r_id]  #set of all fuel cells
@@ -85,7 +72,6 @@ CO2_content = fuel[1, 2:end] # tons CO2/MMBtu
 fuel_costs = Dict{AbstractString, Array{Float64}}()
 fuel_CO2 = Dict{AbstractString, Float64}()
 fuel_type = dfGen[!,:fuel]
-CO2_content
 
 for i = 1:length(fuels)
     fuel_costs[fuels[i]] = costs[:,i] 
@@ -114,28 +100,29 @@ unregister(CEM, :vPowGenOnline)
 # Power Generation DV #
 @variable(CEM, vNewPowGenCap[g in G], Int)
 @variable(CEM, vRetPowGenCap[g in G], Int)
-@variable(CEM, vPowGen[g in G, w in W, t in H_w[w]]>=0)
-@variable(CEM, vPowGenOnline[g in G_ther, w in W, t in H_w[w]], Int)
-@variable(CEM, vPowGenStart[g in G_ther, w in W, t in H_w[w]], Int)
-@variable(CEM, vPowGenShut[g in G_ther, w in W, t in H_w[w]], Int)
+@variable(CEM, vPowGen[g in G, w in W, t in T]>=0)
+@variable(CEM, vPowGenOnline[g in G_ther, w in W, t in T], Int)
+@variable(CEM, vPowGenOnlineStart[g in G_ther, w in W],Int)
+@variable(CEM, vPowGenStart[g in G_ther, w in W, t in T], Int)
+@variable(CEM, vPowGenShut[g in G_ther, w in W, t in T], Int)
 #@variable(CEM, vPowResUp[g in G_ther, t in T]>=0)
 #@variable(CEM, vPowResDn[g in G_ther, t in T]>=0)
 
-# Power Storage DV #
+# Power Storage DV 
 @variable(CEM, vNewPowStoCap[s in S], Int)
 @variable(CEM, vRetPowStoCap[s in S], Int)
-@variable(CEM, vPowStoCha[s in S, w in W, t in H_w[w]]>=0)
-@variable(CEM, vPowStoDis[s in S, w in W, t in H_w[w]]>=0)
-@variable(CEM, vPowSOC[s in S, w in W, t in H_w[w]]>=0)
+@variable(CEM, vPowStoCha[s in S, w in W, t in T]>=0)
+@variable(CEM, vPowStoDis[s in S, w in W, t in T]>=0)
+@variable(CEM, vPowSOC[s in S, w in W, t in T]>=0)
 
 #Adding starting t of week
 
 # Power Transmission DV #
 @variable(CEM, vNewPowTraCap[l in L], Int)
-@variable(CEM, vPowFlow[l in L, w in W, t in H_w[w]])
+@variable(CEM, vPowFlow[l in L, w in W, t in T])
 
 # Non-Served Power demand
-@variable(CEM, vPowNSD[z in Z, t in T]>=0)
+@variable(CEM, vPowNSD[z in Z, w in W, t in T]>=0)
 
 
   ########################
@@ -145,30 +132,29 @@ unregister(CEM, :vPowGenOnline)
 # HSC Generation DV
 @variable(CEM, vNewH2GenCap[h in H], Int)
 @variable(CEM, vRetH2GenCap[h in H], Int)
-@variable(CEM, vH2Gen[h in H, t in T]>=0)
-@variable(CEM, vH2GenStart[h in H_ther, t in T], Int)
-@variable(CEM, vH2GenShut[h in H_ther, t in T], Int)
-@variable(CEM, vH2GenOnline[h in H_ther, t in T], Int)
-
+@variable(CEM, vH2Gen[h in H, w in W, t in T]>=0)
+@variable(CEM, vH2GenStart[h in H_ther,  w in W, t in T], Int)
+@variable(CEM, vH2GenShut[h in H_ther,  w in W, t in T], Int)
+@variable(CEM, vH2GenOnline[h in H_ther,  w in W, t in T], Int)
 
 # HSC Storage DV
-@variable(CEM, vNewH2StoCap[s in Q]>=0)
-@variable(CEM, vRetH2StoCap[s in Q]>=0)
-#@variable(CEM, vNewH2StoCompCap[s in Q]>=0)
-#@variable(CEM, vRetH2StoCompCap[s in Q]>=0)
-@variable(CEM, vH2StoCha[s in Q, t in T]>=0)
-@variable(CEM, vH2StoDis[s in Q, t in T]>=0)
-@variable(CEM, vH2StoSOC[s in Q, t in 0:length(T)]>=0)
+@variable(CEM, vNewH2StoCap[s in Q], Int)
+@variable(CEM, vRetH2StoCap[s in Q], Int)
+@variable(CEM, vNewH2StoCompCap[s in Q], Int)
+@variable(CEM, vRetH2StoCompCap[s in Q], Int)
+@variable(CEM, vH2StoCha[s in Q, w in W, t in T]>=0)
+@variable(CEM, vH2StoDis[s in Q, w in W, t in T]>=0)
+@variable(CEM, vH2StoSOC[s in Q, w in W, t in T]>=0)
 
 # HSC Transmission DV
 @variable(CEM, vNewH2Pipe[i in I], Int)
 @variable(CEM, vRetH2Pipe[i in I], Int)
-#@variable(CEM, vNewH2PipeCompCap[i in I]>=0)
-#@variable(CEM, vRetH2PipeCompCap[i in I]>=0)
-@variable(CEM, vH2Flow[i in I, t in T])
+@variable(CEM, vNewH2PipeCompCap[i in I], Int)
+@variable(CEM, vRetH2PipeCompCap[i in I], Int)
+@variable(CEM, vH2Flow[i in I, w in W, t in T])
 
 # HSC NSD #
-@variable(CEM, vH2NSD[z in Z, t in T]>=0)
+@variable(CEM, vH2NSD[z in Z,  w in W, t in T]>=0)
 
 ###################
 ### Expressions ###
@@ -185,36 +171,36 @@ unregister(CEM, :vPowGenOnline)
 #@expression(CEM, eRepPowGenCap[g in G_ther], pow_gen[g, :existing_cap] / dfGen[g, :num_units])
 @expression(CEM, eTotPowGenCap[g in G], pow_gen[g, :existing_cap] .+ pow_gen[g, :rep_capacity]*(vNewPowGenCap[g] .- vRetPowGenCap[g]))
 @expression(CEM, eTotPowGenUnit[g in G_ther], pow_gen[g, :num_units]+vNewPowGenCap[g]-vRetPowGenCap[g])
-@expression(CEM, ePowGenByZone[z in Z, t in T], sum(vPowGen[g, t] * (pow_gen[g, :zone] == z ? 1 : 0) for g in G))
-@expression(CEM, eTotPowGenCapByZone[z in Z], sum(eTotPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in G_ther))
-@expression(CEM, ePowResReqUp[z in Z, t in T], 0.1 * eTotPowGenCapByZone[z] .+ 0.05 * pow_demand[t,z])
-@expression(CEM, ePowResReqDn[z in Z, t in T], 0.05 * pow_demand[t,z])
-@expression(CEM, ePowGenEmiByZone[z in Z], sum(CO2_content[pow_gen[g, :fuel]] * pow_gen[g,:heat_rate_mmbtu_per_yr]*vPowGen[g,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G_ther, t in T))
+@expression(CEM, ePowGenByZone[z in Z, w in W, t in T], sum(vPowGen[g,w,t] * (pow_gen[g, :zone] == z ? 1 : 0) for g in G))
+#@expression(CEM, eTotPowGenCapByZone[z in Z], sum(eTotPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in G_ther))
+#@expression(CEM, ePowResReqUp[z in Z, t in T], 0.1 * eTotPowGenCapByZone[z] .+ 0.05 * pow_demand[t,z])
+#@expression(CEM, ePowResReqDn[z in Z, t in T], 0.05 * pow_demand[t,z])
+@expression(CEM, ePowGenEmiByZone[z in Z], sum(CO2_content[pow_gen[g, :fuel]] * pow_gen[g,:heat_rate_mmbtu_per_yr]*vPowGen[g,w,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G_ther, w in W, t in T))
 @expression(CEM, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
 
 # Power Storage Expressions #
 @expression(CEM, eTotPowStoCap[s in S], dfStor[dfStor.r_id .==s, :existing_cap] .+ pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] .- vRetPowStoCap[s]))
-@expression(CEM, ePowStoChaByZone[z in Z, t in T], sum(vPowStoCha[s, t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
-@expression(CEM, ePowStoDisByZone[z in Z, t in T], sum(vPowStoDis[s, t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
+@expression(CEM, ePowStoChaByZone[z in Z, w in W, t in T], sum(vPowStoCha[s,w,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
+@expression(CEM, ePowStoDisByZone[z in Z, w in W, t in T], sum(vPowStoDis[s,w,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
 @expression(CEM, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
 
 # Power Transmission Expressions #
-@expression(CEM, eTotPowTraCap[l in L], pow_lines[l, :existing_transmission_cap_mw] .+ vNewPowTraCap[l]) #No retired cap considered for transmission lines + Not var cost for power flows
-@expression(CEM, eNet_Pow_Flow[z in Z,t in T], sum(Pow_Network[l,z] * vPowFlow[l,t] for l in L))
-@expression(CEM, ePow_Loss_By_Zone[z in Z,t in T], sum(abs(Pow_Network[l,z]) * (1/2) *vPowFlow[l,t] * pow_lines[l, :line_loss_percentage] for l in L))
+@expression(CEM, eTotPowTraCap[l in L], pow_lines[l, :existing_transmission_cap_mw] .+ vNewPowTraCap[l]) #No retired cap considered for transmission lines + Not var cost for power flows - Rep Cap is cosidered 1
+@expression(CEM, eNet_Pow_Flow[z in Z, w in W, t in T], sum(Pow_Network[l,z] * vPowFlow[l,w,t] * (-1) for l in L))
+@expression(CEM, ePow_Loss_By_Zone[z in Z, w in W, t in T], sum(abs(Pow_Network[l,z]) * (1/2) *vPowFlow[l,w,t] * pow_lines[l, :line_loss_percentage] for l in L))
 
 # Cost Expressions
-@expression(CEM, eCostPowGenInv, sum(pow_gen[g, :inv_cost_per_mwyr] .* vNewPowGenCap[g] .* pow_gen[g, :rep_capacity] .+ dfGen[dfGen[!, :r_id] .==g, :fom_cost_per_mwyr] .* eTotPowGenCap[g] for g in G))
+@expression(CEM, eCostPowGenInv, sum(pow_gen[g, :inv_cost_per_mwyr] .* vNewPowGenCap[g] .* pow_gen[g, :rep_capacity] .+ pow_gen[g, :fom_cost_per_mwyr] .* eTotPowGenCap[g] for g in G))
 @expression(CEM, eCostPowGenVar, 
-    sum((pow_gen[g, :vom_cost_mwh] + pow_gen[g, :heat_rate_mmbtu_per_yr] .* fuel_costs[pow_gen[g, :fuel]][t]) .* vPowGen[g,t] for g in G, t in T)    
+    sum((pow_gen[g, :vom_cost_mwh] + pow_gen[g, :heat_rate_mmbtu_per_yr] .* fuel_costs[pow_gen[g, :fuel]][t]) .* vPowGen[g,w,t] for g in G, w in W, t in T)    
 )
-@expression(CEM, eCostPowGenStart, sum(pow_gen[g, :start_cost_per_mw] .* pow_gen[g, :rep_capacity] .* vPowGenStart[g, t] for g in G_ther, t in T)) 
+@expression(CEM, eCostPowGenStart, sum(pow_gen[g, :start_cost_per_mw] .* pow_gen[g, :rep_capacity] .* vPowGenStart[g,w,t] for g in G_ther, w in W, t in T)) 
 #For cost of Non-served demand we only consider $/MWh for each zone and will not consider demand segments
-@expression(CEM, eCostPowNSD, sum(vPowNSD[z,t] .* zones[z, :voll_pow] for z in Z, t in T))
+@expression(CEM, eCostPowNSD, sum(vPowNSD[z,w,t] .* zones[z, :voll_pow] for z in Z, w in W, t in T))  #Zonal decomposition
 @expression(CEM, eCostPowStoInv, 
-    sum(pow_gen[s, :inv_cost_per_mwhyr] .* vNewPowStoCap[s] *pow_gen[s, :rep_capacity] .+ ((pow_gen[s, :fom_cost_per_mwhyr] + pow_gen[s, :fom_cost_charge_per_mwyr]) .* eTotPowStoCap[s]) for s in S)
-)
-@expression(CEM, eCostPowStoVar, sum(vPowStoCha[s,t] .* pow_gen[s, :vom_cost_mwh_charge] for s in S, t in T))
+    sum(pow_gen[s, :inv_cost_per_mwhyr] .* vNewPowStoCap[s] *pow_gen[s, :rep_capacity] .+ (pow_gen[s, :fom_cost_per_mwhyr] .* eTotPowStoCap[s]) for s in S)
+) #zonal decomposition
+@expression(CEM, eCostPowStoVar, sum(vPowStoCha[s,w,t] .* pow_gen[s, :vom_cost_mwh_charge] for s in S, w in W, t in T))
 @expression(CEM, eCostPowTraInv, sum(pow_lines[l, :line_reinforcement_cost_per_mwyr] .* vNewPowTraCap[l] for l in L))
 
 
@@ -226,55 +212,54 @@ unregister(CEM, :vPowGenOnline)
 @expression(CEM, eTotH2GenCap[h in H], hsc_gen[h, :existing_cap_tonne_p_hr] .+ hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h] .- vRetH2GenCap[h]))
 @expression(CEM, eTotH2GenUnit[h in H_ther], hsc_gen[h, :num_units]+vNewH2GenCap[h]-vRetH2GenCap[h])
 #@expression(CEM, eRepH2GenCap[h in H_ther], hsc_gen[h, :existing_cap_tonne_p_hr]/hsc_gen[h, :num_units])
-@expression(CEM, eH2GenEvap[h in H, t in T], hsc_gen[h, :boil_off]*vH2Gen[h,t])
-@expression(CEM, eH2GenEmiByZone[z in Z], sum(CO2_content[hsc_gen[h, :fuel]] * hsc_gen[h,:heat_rate_mmbtu_p_tonne]*vH2Gen[h,t]*(1-hsc_gen[h,:ccs_rate])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H_ther, t in T))
+@expression(CEM, eH2GenEvap[h in H, w in W, t in T], hsc_gen[h, :boil_off]*vH2Gen[h,w,t])
+@expression(CEM, eH2GenEmiByZone[z in Z], sum(CO2_content[hsc_gen[h, :fuel]] * hsc_gen[h,:heat_rate_mmbtu_p_tonne]*vH2Gen[h,w,t]*(1-hsc_gen[h,:ccs_rate])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H_ther, w in W,t in T))
 @expression(CEM, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
 
 # HSC Storage Expression
 @expression(CEM, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s] - vRetH2StoCap[s]))
-#@expression(CEM, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s])
+@expression(CEM, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s]) #rep cap is considered 1
 @expression(CEM, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])*hsc_gen[s, :rep_capacity]* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
 
 # HSC Tramsmission Expression
 @expression(CEM, eTotH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + vNewH2Pipe[i] - vRetH2Pipe[i])
-@expression(CEM, eNet_H2_Flow[z in Z,t in T], sum(H2_Network[i,z] * vH2Flow[i,t] for i in I))
-@expression(CEM, eH2_Loss_By_Zone[z in Z,t in T], sum(abs(H2_Network[i,z]) * (1/2) *vH2Flow[i,t] * hsc_pipelines[i, :pipe_loss_coeff] for i in I ))
-#@expression(CEM, eTotH2PipeCompCap[i in I], hsc_pipelines[i, :existing_comp_cap_tonne_hr] + vNewH2PipeCompCap[i] - vRetH2PipeCompCap[i])
+@expression(CEM, eNet_H2_Flow[z in Z,w in W, t in T], sum(H2_Network[i,z] * vH2Flow[i,w,t] *(-1) for i in I))
+@expression(CEM, eH2_Loss_By_Zone[z in Z, w in W, t in T], sum(abs(H2_Network[i,z]) * (1/2) *vH2Flow[i,w,t] * hsc_pipelines[i, :pipe_loss_coeff] for i in I ))
+@expression(CEM, eTotH2PipeCompCap[i in I], hsc_pipelines[i, :existing_comp_cap_tonne_hr] + vNewH2PipeCompCap[i] - vRetH2PipeCompCap[i])
 @expression(CEM, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :land_use_km2_p_length]*hsc_pipelines[i, :distance]*hsc_pipelines[i, :land_use_km2_p_length]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
 
 # HSC Cost Expressions
 @expression(CEM, eCostH2GenInv, sum(hsc_gen[h, :inv_cost_tonne_hr_p_yr]*vNewH2GenCap[h]*hsc_gen[h, :rep_capacity] + hsc_gen[h, :fom_cost_p_tonne_p_hr_yr]*eTotH2GenCap[h] for h in H))
 
-@expression(CEM, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] #=+ hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s]=#
-                                  + hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] #=+ hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[w]=# for s in Q)
+@expression(CEM, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s]
+                                  + hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] + hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] for s in Q)
 )
-#@expression(CEM, eCostH2StoCompInv, sum((hsc_gen[w, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[w]) + (hsc_gen[w, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[w]) for w in W))
 
 @expression(CEM, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
-                                    hsc_pipelines[i, :fom_per_length]*hsc_pipelines[i, :distance]*eTotH2Pipe[i] #=+
+                                    hsc_pipelines[i, :fom_per_length]*hsc_pipelines[i, :distance]*eTotH2Pipe[i] +
                                     hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i] + 
-                                    hsc_pipelines[i, :fom_comp_p_tonne_hr]*eTotH2PipeCompCap[i]=# for i in I)
+                                    hsc_pipelines[i, :fom_comp_p_tonne_hr]*eTotH2PipeCompCap[i] for i in I)
 )
 
 @expression(CEM, eCostH2GenVar, 
-    sum((hsc_gen[h, :vom_cost_p_tonne] + hsc_gen[h, :heat_rate_mmbtu_p_tonne] .* fuel_costs[lowercase(hsc_gen[h, :fuel])][t]) .* vH2Gen[h,t] for h in H, t in T)    
+    sum((hsc_gen[h, :vom_cost_p_tonne] + hsc_gen[h, :heat_rate_mmbtu_p_tonne] .* fuel_costs[lowercase(hsc_gen[h, :fuel])][t]) .* vH2Gen[h,w,t] for h in H, w in W, t in T)    
 )
 
-@expression(CEM, eCostH2GenStart, sum(hsc_gen[h, :startup_cost_p_tonne_hr] .* hsc_gen[h, :rep_capacity] .* vH2GenStart[h, t] for h in H_ther, t in T)) 
+@expression(CEM, eCostH2GenStart, sum(hsc_gen[h, :startup_cost_p_tonne_hr] .* hsc_gen[h, :rep_capacity] .* vH2GenStart[h,w,t] for h in H_ther, w in W, t in T)) 
 
-@expression(CEM, eCostH2NSD, sum(vH2NSD[z,t] .* zones[z, :voll_hsc] for z in Z, t in T))
+@expression(CEM, eCostH2NSD, sum(vH2NSD[z,w,t] .* zones[z, :voll_hsc] for z in Z, w in W,t in T))
 
-@expression(CEM, ePowDemandHSC[t in T, z in Z], sum(hsc_gen[h, :pow_demand_mwh_p_tonne]*vH2Gen[h,t]*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) + 
-                                                sum(hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,t]*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) +
-                                                sum(hsc_pipelines[i, :comp_pow_mwh_per_tonne]*vH2Flow[i,t]*(H2_Network[i,z]==1 ? 1 : 0) for i in I)
+@expression(CEM, ePowDemandHSC[w in W, t in T, z in Z], sum(hsc_gen[h, :pow_demand_mwh_p_tonne]*vH2Gen[h,w,t]*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) #= + 
+                                                sum(hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,w,t]*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) +
+                                                sum(hsc_pipelines[i, :comp_pow_mwh_per_tonne]*vH2Flow[i,w,t]*(H2_Network[i,z]==1 ? 1 : 0) for i in I)=#
 )
-@expression(CEM, eH2DemandPow[z in Z,t in T], sum(pow_gen[g, :h2_demand_tonne_p_mwh]*vPowGen[g,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G))
-@expression(CEM, pow_D[t in T, z in Z], pow_demand[t,z] .+ ePowDemandHSC[t,z])
-@expression(CEM, H2_D[t in T, z in Z], h2_demand[t,z] .+ eH2DemandPow[z,t])
+@expression(CEM, eH2DemandPow[w in W, t in T, z in Z], sum(pow_gen[g, :h2_demand_tonne_p_mwh]*vPowGen[g,w,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G))
+@expression(CEM, pow_D[w in W, t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[w,t,z])
+@expression(CEM, H2_D[w in W, t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[w,t,z])
 
 #Defining Objective Function
 
-obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ eCostPowStoVar .+ eCostPowNSD .+ eCostPowGenStart).+ (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2NSD .+ #=eCostH2StoCompInv .+=# eCostH2GenStart)
+obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ eCostPowStoVar .+ eCostPowNSD .+ eCostPowGenStart).+ (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2NSD .+ eCostH2GenStart)
 
 @objective(CEM, Min, obj) # The objective is linear exept the start cost of thermal generators which is integer
 
@@ -288,12 +273,12 @@ obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ e
   #-------------------------#
 
 # Power Balance #
-@constraint(CEM, cPowerBalance[z in Z, t in T],
-    ePowGenByZone[z,t] .- eNet_Pow_Flow[z,t] .- ePow_Loss_By_Zone[z,t] .+ ePowStoDisByZone[z,t] .- ePowStoChaByZone[z,t] .+ vPowNSD[z,t] == pow_D[t,z]
+@constraint(CEM, cPowerBalance[z in Z, w in W,t in T],
+    ePowGenByZone[z,w,t] .- eNet_Pow_Flow[z,w,t] .- ePow_Loss_By_Zone[z,w,t] .+ ePowStoDisByZone[z,w,t] .- ePowStoChaByZone[z,w,t] .+ vPowNSD[z,w,t] == pow_D[w,t,z]
 )
 
 # Power Generation #
-@constraint(CEM, cMaxPowGenRetCapTher[g in G_ther], vRetPowGenCap[g]*pow_gen[g, :rep_capacity] <= pow_gen[g, :existing_cap])
+@constraint(CEM, cMaxPowGenRetCapTher[g in G], vRetPowGenCap[g]*pow_gen[g, :rep_capacity] <= pow_gen[g, :existing_cap])
 
 for g in G
   if 0 <= pow_gen[g, :max_cap_mw]
@@ -302,17 +287,18 @@ for g in G
 end
 
 @constraint(CEM, cPowGenTotCapMin[g in G], pow_gen[g, :min_cap] <= eTotPowGenCap[g])
-@constraint(CEM, cMaxPowGen[g in G_ren, t in T], vPowGen[g,t] .- eTotPowGenCap[g] .* pow_gen_var[t, pow_gen[g, :resource]] <= 0)
-@constraint(CEM, cMaxPowGenTher[g in G_ther, t in T], vPowGen[g,t] .- (pow_gen[g, :rep_capacity].*pow_gen[g,:max_op_level].*vPowGenOnline[g,t]) <= 0)
-@constraint(CEM, cMinPowGenTher[g in G_ther, t in T], (pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,t]) .- vPowGen[g,t] <= 0) 
-#Considering investment or retirement of units from clusters to limit number of online units later
-#@constraint(CEM, cNewPowUnitsCluster[g in G_ther], vNewPowUnits[g] >= vNewPowGenCap[g] / (pow_gen[g, :existing_cap] / pow_gen[g, :num_units]))
-#@constraint(CEM, cRetPowUnitsCluster[g in G_ther], vRetPowUnits[g] >= vRetPowGenCap[g] / (pow_gen[g, :existing_cap] / pow_gen[g, :num_units]))
-@constraint(CEM, cPowOnlineUnits[g in G_ther, t in T], vPowGenOnline[g,t] <= eTotPowGenUnit[g])
-#@constraint(CEM, [g in G_ther], vRetPowUnits[g] <= pow_gen[g, :num_units])
-@constraint(CEM, cPowStartLimits[g in G_ther, t in T], vPowGenStart[g,t]<= eTotPowGenUnit[g]-vPowGenOnline[g,t])
-@constraint(CEM, cPowShutLimits[g in G_ther, t in T], vPowGenShut[g,t] <= vPowGenOnline[g,t])
-@constraint(CEM, cPowUnitOnlineCon[g in G_ther, t in 2:length(T)], vPowGenOnline[g,t] - vPowGenOnline[g, t-1] == vPowGenStart[g,t]-vPowGenShut[g,t])
+@constraint(CEM, cMaxPowGen[g in G_ren, w in W, t in T], vPowGen[g,w,t] .- eTotPowGenCap[g] .* pow_gen_var[H_w[w][t], pow_gen[g, :resource]] <= 0)
+@constraint(CEM, cMaxPowGenTher[g in G_ther, w in W, t in T], vPowGen[g,w,t] .- (pow_gen[g, :rep_capacity].*pow_gen[g,:max_op_level].*vPowGenOnline[g,w,t]) <= 0)
+@constraint(CEM, cMinPowGenTher[g in G_ther,w in W,t in T], (pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,w,t]) .- vPowGen[g,w,t] <= 0)
+@constraint(CEM, cPowOnlineUnits[g in G_ther, w in W, t in T], vPowGenOnline[g,w,t] <= eTotPowGenUnit[g])
+@constraint(CEM, cPowStartLimits[g in G_ther,w in W,t in T], vPowGenStart[g,w,t]<= eTotPowGenUnit[g]-vPowGenOnline[g,w,t])
+@constraint(CEM, cPowShutLimits[g in G_ther,w in W,t in T], vPowGenShut[g,w,t] <= vPowGenOnline[g,w,t])
+unregister(CEM, :cPowUnitOnlineFirst)
+@constraint(CEM, cPowUnitOnlineCon[g in G_ther, w in W, t in 2:length(T)], vPowGenOnline[g,w,t] - vPowGenOnline[g,w,t-1] == vPowGenStart[g,w,t]-vPowGenShut[g,w,t])
+@constraint(CEM, cPowUnitOnlineFirst[g in G_ther, w in W], vPowGenOnline[g,w,1] - vPowGenOnlineStart[g,w] == vPowGenStart[g,w,1]-vPowGenShut[g,w,1])
+@constraint(CEM, cPowUnitOnlineCycle[g in G_ther, w in W], vPowGenOnlineStart[g,w] == vPowGenOnline[g,w,168])
+
+
 #Minimum up/donw time for thermal generators
 @constraint(CEM, cMinUpTimePowGen[g in G_ther, t in T], sum(vPowGenStart[g,tt] for tt in intersect(T, (t - pow_gen[g, :up_time]):t)) <= vPowGenOnline[g,t])
 @constraint(CEM, cMinDnTimePowGen[g in G_ther, t in T], sum(vPowGenShut[g,tt] for tt in intersect(T, (t - pow_gen[g, :down_time]):t)) <= eTotPowGenUnit[g] - vPowGenOnline[g,t])
