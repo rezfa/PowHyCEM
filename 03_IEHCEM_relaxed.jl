@@ -351,7 +351,7 @@ for s in S
     @constraint(CEM, cMaxPowStoCap[s in S],eTotPowStoCap[s]<= pow_gen[s, :max_cap_mwh])
   end
 end
-@constraint(CEM, cPowStoTotCapMin[s in S], pow_gen[s, :min_cap_mwh] <= eTotPowStoCap[s])
+@constraint(CEM, cPowStoTotCapMin[s in S], pow_gen[s, :min_cap_mwh] .-  eTotPowStoCap[s] <=0)
 @constraint(CEM, cPowStoBalance[s in S, w in W, t in 2:length(T)], vPowSOC[s,w,t] == (1-pow_gen[s,:etta_self_dis])*vPowSOC[s,w,t-1] + pow_gen[s,:etta_cha]*vPowStoCha[s,w,t] - (1/pow_gen[s,:etta_dis])*vPowStoDis[s,w,t])
 @constraint(CEM, cPowStoBalanceFirst[s in S, w in W], vPowSOC[s,w,1] == (1-pow_gen[s,:etta_self_dis])*vPowSOCFirst[s,w] + pow_gen[s,:etta_cha]*vPowStoCha[s,w,1] - (1/pow_gen[s,:etta_dis])*vPowStoDis[s,w,1])
 @constraint(CEM, cPowStoMaxDis[s in S, w in W, t in 2:length(T)], vPowStoDis[s,w,t] <= pow_gen[s,:etta_dis]*vPowSOC[s,w,t-1])
@@ -472,14 +472,14 @@ end)
 # Policy constraints
 
 # Power Non-served Demand #
-#@constraint(CEM, cPowNSD[z in Z, w in W, t in T], vPowNSD[z,w,t] <= zones[z, :pow_nsd_share]*pow_D[w,t,z] )
+@constraint(CEM, cPowNSD[z in Z, w in W, t in T], vPowNSD[z,w,t] <= zones[z, :pow_nsd_share]*pow_D[w,t,z] )
 # H2 NSD Constraints
-#@constraint(CEM, cH2NSD[z in Z, w in W, t in T], vH2NSD[z,w,t] <= zones[z, :hsc_nsd_share]*H2_D[w, t,z])
+@constraint(CEM, cH2NSD[z in Z, w in W, t in T], vH2NSD[z,w,t] <= zones[z, :hsc_nsd_share]*H2_D[w, t,z])
 
 #Emission constraint
-#@constraint(CEM, cZonalEmissionCapByWeek[z in Z, w in W], eZonalEmissionCapByWeek[z,w] - vExtraEmmisionByZone[z,w] <= vMaxEmissionByWeek[z,w])
+@constraint(CEM, cZonalEmissionCapByWeek[z in Z, w in W], eZonalEmissionCapByWeek[z,w] - vExtraEmmisionByZone[z,w] <= vMaxEmissionByWeek[z,w])
 
-#@constraint(CEM, cZonalEmissionCap[z in Z], sum(eZonalEmissionCapByWeek[z,w] for w in W) <= 0.05*sum((H2_D[w,t,z]*33.3) +pow_D[w,t,z] for t in T, w in W))
+@constraint(CEM, cZonalEmissionCap[z in Z], sum(eZonalEmissionCapByWeek[z,w] for w in W) <= 0.05*sum((H2_D[w,t,z]*33.3) +pow_D[w,t,z] for t in T, w in W))
 
 #Land Use Constraint on each zone
 @constraint(CEM, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
