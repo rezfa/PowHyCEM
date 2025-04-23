@@ -1,6 +1,4 @@
 using JuMP, Gurobi, DataFrames, CSV
-using MathOptInterface
-using JuMP.MOI
 
 datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
 
@@ -87,7 +85,7 @@ Pow_Network = pow_lines[1:length(L), col_p:col_p+length(Z)-1]
 col_h = findall(s -> s == "z1", names(hsc_pipelines))[1]
 H2_Network = hsc_pipelines[1:length(I), col_h:col_h+length(Z)-1]
 
-big_M = 100000
+big_M = 1000000
 LB = -Inf
 UB = Inf
 gap = UB - LB
@@ -123,8 +121,8 @@ set_optimizer_attribute(MP, "DualReductions", 0)
 @variable(MP, vRetH2GenCap[h in H]>=0, Int)
 @variable(MP, vNewH2StoCap[s in Q]>=0, Int)
 @variable(MP, vRetH2StoCap[s in Q]>=0, Int)
-@variable(MP, vNewH2StoCompCap[s in Q]>=0, Int)
-@variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)
+#@variable(MP, vNewH2StoCompCap[s in Q]>=0, Int)
+#@variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)
 @variable(MP, vNewH2Pipe[i in I]>=0, Int)
 @variable(MP, vRetH2Pipe[i in I]>=0, Int)
 @variable(MP, vNewH2PipeCompCap[i in I]>=0, Int)
@@ -137,7 +135,7 @@ set_optimizer_attribute(MP, "DualReductions", 0)
 @expression(MP, eTotPowStoCap[s in S], dfStor[dfStor.r_id .==s, :existing_cap] .+ pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] .- vRetPowStoCap[s]))
 @expression(MP, eTotH2GenCap[h in H], hsc_gen[h, :existing_cap_tonne_p_hr] .+ hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h] .- vRetH2GenCap[h]))
 @expression(MP, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s] - vRetH2StoCap[s]))
-@expression(MP, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s])
+#@expression(MP, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s])
 @expression(MP, eTotH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + vNewH2Pipe[i] - vRetH2Pipe[i])
 @expression(MP, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
 @expression(MP, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
@@ -152,8 +150,8 @@ set_optimizer_attribute(MP, "DualReductions", 0)
 ) 
 @expression(MP, eCostPowTraInv, sum(pow_lines[l, :line_reinforcement_cost_per_mwyr] .* vNewPowTraCap[l] for l in L))
 @expression(MP, eCostH2GenInv, sum(hsc_gen[h, :inv_cost_tonne_hr_p_yr]*vNewH2GenCap[h]*hsc_gen[h, :rep_capacity] + hsc_gen[h, :fom_cost_p_tonne_p_hr_yr]*eTotH2GenCap[h] for h in H))
-@expression(MP, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s]
-                                  + hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] + hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] for s in Q)
+@expression(MP, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + #=hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s]=#
+                                 hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] #=+ hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s]=# for s in Q)
 )
 @expression(MP, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
                                     hsc_pipelines[i, :fom_per_length]*hsc_pipelines[i, :distance]*eTotH2Pipe[i] +
@@ -199,7 +197,7 @@ for s in Q
   end
 end
 @constraint(MP, cMinH2StoCap[s in Q], hsc_gen[s, :min_cap_stor_tonne] <= eTotH2StoCap[s])
-@constraint(MP, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
+#@constraint(MP, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
 @constraint(MP, cMaxH2PipeNum[i in I], eTotH2Pipe[i] <= hsc_pipelines[i, :max_num_pipes])
 @constraint(MP, cMaxRetH2PipeNum[i in I], vRetH2Pipe[i] <= hsc_pipelines[i, :existing_num_pipes])
 @constraint(MP, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
@@ -251,19 +249,20 @@ end
     @variable(SP, vH2GenShut[h in H_ther,  w in W, t in T]>=0)
     @variable(SP, vH2GenOnline[h in H_ther,  w in W, t in T]>=0)
     @variable(SP, vH2GenOnlineFirst[h in H_ther, w in W]>=0)
-    # HSC Storage DV
+# HSC Storage DV
     @variable(SP, vH2StoCha[s in Q, w in W, t in T]>=0)
     @variable(SP, vH2StoDis[s in Q, w in W, t in T]>=0)
     @variable(SP, vH2StoSOC[s in Q, w in W, t in T]>=0)
     @variable(SP, vH2StoSOCFirst[s in Q, w in W]>=0)
-    # HSC Transmission DV
+# HSC Transmission DV
     @variable(SP, vH2Flow[i in I, w in W, t in T])
-    # Policy Variables
+# Policy Variables
     @variable(SP, vH2NSD[z in Z,  w in W, t in T]>=0)
     @variable(SP, vPowNSD[z in Z, w in W, t in T]>=0)
     @variable(SP, vExtraEmissionByZone[z in Z, w in W]>=0)
     @variable(SP, vPowSlack[z in Z, w in W, t in T]>=0)
     @variable(SP, vH2Slack[z in Z, w in W, t in T]>=0)
+
     # ---- SP Expressions ---- #
     # Power Generation Expressions #
     @expression(SP, eAvailPowGenCap[g in G], pow_gen[g, :existing_cap] .+ pow_gen[g,:rep_capacity]*(value(MP[:vNewPowGenCap][g]) - value(MP[:vRetPowGenCap][g])))
@@ -293,7 +292,7 @@ end
     @expression(SP, eH2GenEvap[h in H, w in W, t in T], hsc_gen[h, :boil_off]*vH2Gen[h,w,t])
     # HSC Storage Expression
     @expression(SP, eAvailH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + hsc_gen[s, :rep_capacity]*(value(MP[:vNewH2StoCap][s]) - value(MP[:vRetH2StoCap][s])))
-    @expression(SP, eAvailH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + value(MP[:vNewH2StoCompCap][s]) - value(MP[:vRetH2StoCompCap][s])) #rep cap is considered 1
+    #@expression(SP, eAvailH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + value(MP[:vNewH2StoCompCap][s]) - value(MP[:vRetH2StoCompCap][s])) #rep cap is considered 1
     # HSC Tramsmission Expression
     @expression(SP, eAvailH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + value(MP[:vNewH2Pipe][i]) - value(MP[:vRetH2Pipe][i]))
     @expression(SP, eH2FolwbyZone[i in I, z in Z, w in W, t in T], vH2Flow[i,w,t]*H2_Network[i,z])
@@ -470,7 +469,7 @@ end
         pi_cH2OnlineUnits[h in H_ther] = sum((dual(cH2OnlineUnits[h,w,t])+dual(cH2StartLimits[h,w,t]))*hsc_gen[h, :rep_capacity] for w in W, w in T)
         pi_cH2GenRamp[h in H_dis] = sum((dual(cH2GenRampUp[h,w,t])*hsc_gen[h, :ramp_up_percentage] + dual(cH2GenRampDn[h,w,t]*hsc_gen[h, :ramp_down_percentage]))*hsc_gen[h, :rep_capacity] for w in W, t in 2:length(T))
         pi_cH2StoSOC[s in Q] = sum((dual(cMaxH2StoSOC[s,w,t])*hsc_gen[s,:h2stor_max_level] - dual(cMinH2StoSOC[s,w,t])*hsc_gen[s,:h2stor_min_level])*hsc_gen[s, :rep_capacity] for w in W, t in 2:length(T))
-        pi_cMaxH2StoChar[s in Q] = sum(dual(cMaxH2StoChar[s,w,t]) for w in W, t in T)
+        #pi_cMaxH2StoChar[s in Q] = sum(dual(cMaxH2StoChar[s,w,t]) for w in W, t in T)
         pi_cH2PipeFlow[i in I] = sum((dual(cMaxH2PipeFlowOut[i,w,t])-dual(cMaxH2PipeFlowIn[i,w,t]))*hsc_pipelines[i, :max_op_level] for w in W, t in T)
         pi_cH2PipeFlowComp[i in I] = sum(dual(cMaxH2PipeFlowOutComp[i,w,t]) - dual(cMaxH2PipeFlowIn[i,w,t]) for w in W, i in I)
         
@@ -486,7 +485,7 @@ end
             sum(pi_cH2OnlineUnits[h]*(vNewH2GenCap[h]-vRetH2GenCap[h] - value(MP[:vNewH2GenCap][h]) + value(MP[:vRetH2GenCap][h])) for h in H_ther) +
             sum(pi_cH2GenRamp[h]*(vNewH2GenCap[h]-vRetH2GenCap[h] - value(MP[:vNewH2GenCap][h]) + value(MP[:vRetH2GenCap][h])) for h in H_dis) +
             sum(pi_cH2StoSOC[s]*(vNewH2StoCap[s]-vRetH2StoCap[s] - value(MP[:vNewH2GenCap][s]) + values(MP[:vRetH2StoCap][s])) for s in Q) +
-            sum(pi_cMaxH2StoChar[s]*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - value(MP[:vNewH2StoCompCap][s]) + value(MP[:vRetH2StoCompCap][s])) for s in Q) +
+            #=sum(pi_cMaxH2StoChar[s]*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - value(MP[:vNewH2StoCompCap][s]) + value(MP[:vRetH2StoCompCap][s])) for s in Q) +=#
             sum(pi_cH2PipeFlow[i]*(vNewH2Pipe[i]-vRetH2Pipe[i] - value(MP[:vNewH2Pipe][i]) + value(MP[:vRetH2Pipe][i])) for i in I) +
             sum(pi_cH2PipeFlowComp[i]*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - value(MP[:vNewH2PipeCompCap][i]) + value(MP[:vRetH2PipeCompCap][i])) for i in I)
         )

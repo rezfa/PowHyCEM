@@ -138,8 +138,8 @@ CEM = Model(Gurobi.Optimizer)
 # HSC Storage DV
 @variable(CEM, vNewH2StoCap[s in Q]>=0, Int)
 @variable(CEM, vRetH2StoCap[s in Q]>=0, Int)
-@variable(CEM, vNewH2StoCompCap[s in Q]>=0, Int)
-@variable(CEM, vRetH2StoCompCap[s in Q]>=0, Int)
+#@variable(CEM, vNewH2StoCompCap[s in Q]>=0, Int)
+#@variable(CEM, vRetH2StoCompCap[s in Q]>=0, Int)
 @variable(CEM, vH2StoCha[s in Q, w in W, t in T]>=0)
 @variable(CEM, vH2StoDis[s in Q, w in W, t in T]>=0)
 @variable(CEM, vH2StoSOC[s in Q, w in W, t in T]>=0)
@@ -219,7 +219,7 @@ CEM = Model(Gurobi.Optimizer)
 
 # HSC Storage Expression
 @expression(CEM, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s] - vRetH2StoCap[s]))
-@expression(CEM, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s]) #rep cap is considered 1
+#@expression(CEM, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s]) #rep cap is considered 1
 @expression(CEM, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])*hsc_gen[s, :rep_capacity]* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
 
 # HSC Tramsmission Expression
@@ -232,8 +232,8 @@ CEM = Model(Gurobi.Optimizer)
 # HSC Cost Expressions
 @expression(CEM, eCostH2GenInv, sum(hsc_gen[h, :inv_cost_tonne_hr_p_yr]*vNewH2GenCap[h]*hsc_gen[h, :rep_capacity] + hsc_gen[h, :fom_cost_p_tonne_p_hr_yr]*eTotH2GenCap[h] for h in H))
 
-@expression(CEM, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s]
-                                  + hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] + hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] for s in Q)
+@expression(CEM, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] #=+ hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s] =#
+                                  + hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] #=+ hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] =# for s in Q)
 )
 
 @expression(CEM, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
@@ -407,10 +407,6 @@ end
 @constraint(CEM, cMinUpTimeH2Gen[h in H_ther, w in W, t in T], sum(vH2GenStart[h,w,tt] for tt in intersect(T, (t - hsc_gen[h, :up_time]):t)) <= vH2GenOnline[h,w,t])
 @constraint(CEM, cMinDnTimeH2Gen[h in H_ther, w in W, t in T], sum(vH2GenShut[h,w,tt] for tt in intersect(T, (t - hsc_gen[h, :down_time]):t)) <= eTotH2GenUnit[h] - vH2GenOnline[h,w,t])
 
-#Ramp Constraints for H2 Generators - all are considered thermal units, even electrolyzers
-#@constraint(CEM, cH2GenRampUp[h in H_dis, t in 2:length(T)], vH2Gen[h,t] - vH2Gen[h,t-1] .- hsc_gen[h, :ramp_up_percentage] * eTotH2GenCap[h]<= 0) # For Non-Thermal units
-#@constraint(CEM, cH2GenRampDn[h in H_dis, t in 2:length(T)], vH2Gen[h,t-1]-vH2Gen[h,t] .- hsc_gen[h, :ramp_down_percentage] * eTotH2GenCap[h]<= 0)
-
 #Ramp Constraint for Thermal units
 @constraint(CEM, cTherH2GenRampDn[h in H_ther, w in W, t in 2:length(T)], 
             vH2Gen[h,w,t-1] .- vH2Gen[h,w,t] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,w,t].-vH2GenStart[h,w,t])
@@ -450,10 +446,10 @@ end
 @constraint(CEM, cH2StoBalanceFirst[s in Q, w in W], vH2StoSOC[s,w,1] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOCFirst[s,w] + vH2StoCha[s,w,1]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,w,1])
 @constraint(CEM, cMaxH2StoSOC[s in Q, w in W, t in T], vH2StoSOC[s,w,t]<= hsc_gen[s,:h2stor_max_level]*eTotH2StoCap[s])
 @constraint(CEM, cMinH2StoSOC[s in Q, w in W, t in T], hsc_gen[s,:h2stor_min_level]*eTotH2StoCap[s]<= vH2StoSOC[s,w,t])
-@constraint(CEM, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
+#@constraint(CEM, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
 #@constraint(CEM, cMaxH2StorCompcCap[s in Q], eTotH2StoCompCap[s]<= eTotH2StoCap[s])
 #@constraint(CEM, cMinH2StorCompcCap[s in Q], 0.1*eTotH2StoCap[s] <= eTotH2StoCompCap[s])
-@constraint(CEM, cMaxH2StoChar[s in Q,w in W,t in T], vH2StoCha[s,w,t] <= eTotH2StoCompCap[s])
+#@constraint(CEM, cMaxH2StoChar[s in Q,w in W,t in T], vH2StoCha[s,w,t] <= eTotH2StoCompCap[s])
 
 # H2 Transmission constraints
 @constraint(CEM, cMaxH2PipeNum[i in I], eTotH2Pipe[i] <= hsc_pipelines[i, :max_num_pipes])
