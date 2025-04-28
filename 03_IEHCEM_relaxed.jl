@@ -106,8 +106,6 @@ CEM = Model(Gurobi.Optimizer)
 @variable(CEM, vPowGenOnlineFirst[g in G_ther, w in W]>=0)
 @variable(CEM, vPowGenStart[g in G_ther, w in W, t in T]>=0)
 @variable(CEM, vPowGenShut[g in G_ther, w in W, t in T]>=0)
-#@variable(CEM, vPowResUp[g in G_ther, t in T]>=0)
-#@variable(CEM, vPowResDn[g in G_ther, t in T]>=0)
 
 # Power Storage DV 
 @variable(CEM, vNewPowStoCap[s in S]>=0, Int)
@@ -138,8 +136,6 @@ CEM = Model(Gurobi.Optimizer)
 # HSC Storage DV
 @variable(CEM, vNewH2StoCap[s in Q]>=0, Int)
 @variable(CEM, vRetH2StoCap[s in Q]>=0, Int)
-#@variable(CEM, vNewH2StoCompCap[s in Q]>=0, Int)
-#@variable(CEM, vRetH2StoCompCap[s in Q]>=0, Int)
 @variable(CEM, vH2StoCha[s in Q, w in W, t in T]>=0)
 @variable(CEM, vH2StoDis[s in Q, w in W, t in T]>=0)
 @variable(CEM, vH2StoSOC[s in Q, w in W, t in T]>=0)
@@ -155,8 +151,10 @@ CEM = Model(Gurobi.Optimizer)
 # Policy Variables
 @variable(CEM, vH2NSD[z in Z,  w in W, t in T]>=0)
 @variable(CEM, vPowNSD[z in Z, w in W, t in T]>=0)
-@variable(CEM, vExtraEmmisionByZone[z in Z, w in W]>=0)
-@variable(CEM, vMaxEmissionByWeek[z in Z, w in W]>=0)
+@variable(CEM, vPowCrt[z in Z, w in W, t in T]>=0)
+@variable(CEM, vH2Crt[z in Z, w in W, t in T]>=0)
+@variable(CEM, vExtraEmmisionByWeek[w in W]>=0)
+
 ###################
 ### Expressions ###
 ###################
@@ -189,20 +187,6 @@ CEM = Model(Gurobi.Optimizer)
 @expression(CEM, eTotPowTraCap[l in L], pow_lines[l, :existing_transmission_cap_mw] .+ vNewPowTraCap[l]) #No retired cap considered for transmission lines + Not var cost for power flows - Rep Cap is cosidered 1
 @expression(CEM, eNet_Pow_Flow[z in Z, w in W, t in T], sum(Pow_Network[l,z] * vPowFlow[l,w,t] * (-1) for l in L))
 @expression(CEM, ePow_Loss_By_Zone[z in Z, w in W, t in T], sum(abs(Pow_Network[l,z]) * (1/2) *vPowFlow[l,w,t] * pow_lines[l, :line_loss_percentage] for l in L))
-
-# Cost Expressions
-@expression(CEM, eCostPowGenInv, sum(pow_gen[g, :inv_cost_per_mwyr] .* vNewPowGenCap[g] .* pow_gen[g, :rep_capacity] .+ pow_gen[g, :fom_cost_per_mwyr] .* eTotPowGenCap[g] for g in G))
-@expression(CEM, eCostPowGenVar, 
-    sum((pow_gen[g, :vom_cost_mwh] + pow_gen[g, :heat_rate_mmbtu_per_yr] .* fuel_costs[pow_gen[g, :fuel]][t]) .* vPowGen[g,w,t] for g in G, w in W, t in T)    
-)
-@expression(CEM, eCostPowGenStart, sum(pow_gen[g, :start_cost_per_mw] .* pow_gen[g, :rep_capacity] .* vPowGenStart[g,w,t] for g in G_ther, w in W, t in T)) 
-#For cost of Non-served demand we only consider $/MWh for each zone and will not consider demand segments
-@expression(CEM, eCostPowNSD, sum(vPowNSD[z,w,t] .* zones[z, :voll_pow] for z in Z, w in W, t in T))  #Zonal decomposition
-@expression(CEM, eCostPowStoInv, 
-    sum(pow_gen[s, :inv_cost_per_mwhyr] .* vNewPowStoCap[s] *pow_gen[s, :rep_capacity] .+ (pow_gen[s, :fom_cost_per_mwhyr] .* eTotPowStoCap[s]) for s in S)
-) #zonal decomposition
-@expression(CEM, eCostPowStoVar, sum(vPowStoCha[s,w,t] .* pow_gen[s, :vom_cost_mwh_charge] for s in S, w in W, t in T))
-@expression(CEM, eCostPowTraInv, sum(pow_lines[l, :line_reinforcement_cost_per_mwyr] .* vNewPowTraCap[l] for l in L))
 
 
   ################
@@ -251,6 +235,21 @@ CEM = Model(Gurobi.Optimizer)
 
 @expression(CEM, eCostH2NSD, sum(vH2NSD[z,w,t] .* zones[z, :voll_hsc] for z in Z, w in W,t in T))
 
+# Cost Expressions power sector
+@expression(CEM, eCostPowGenInv, sum(pow_gen[g, :inv_cost_per_mwyr] .* vNewPowGenCap[g] .* pow_gen[g, :rep_capacity] .+ pow_gen[g, :fom_cost_per_mwyr] .* eTotPowGenCap[g] for g in G))
+@expression(CEM, eCostPowGenVar, 
+    sum((pow_gen[g, :vom_cost_mwh] + pow_gen[g, :heat_rate_mmbtu_per_yr] .* fuel_costs[pow_gen[g, :fuel]][t]) .* vPowGen[g,w,t] for g in G, w in W, t in T)    
+)
+@expression(CEM, eCostPowGenStart, sum(pow_gen[g, :start_cost_per_mw] .* pow_gen[g, :rep_capacity] .* vPowGenStart[g,w,t] for g in G_ther, w in W, t in T)) 
+#For cost of Non-served demand we only consider $/MWh for each zone and will not consider demand segments
+@expression(CEM, eCostPowNSD, sum(vPowNSD[z,w,t] .* zones[z, :voll_pow] for z in Z, w in W, t in T)) 
+@expression(CEM, eCostPowStoInv, 
+    sum(pow_gen[s, :inv_cost_per_mwhyr] .* vNewPowStoCap[s] *pow_gen[s, :rep_capacity] .+ (pow_gen[s, :fom_cost_per_mwhyr] .* eTotPowStoCap[s]) for s in S)
+) 
+@expression(CEM, eCostPowStoVar, sum(vPowStoCha[s,w,t] .* pow_gen[s, :vom_cost_mwh_charge] for s in S, w in W, t in T))
+@expression(CEM, eCostPowTraInv, sum(pow_lines[l, :line_reinforcement_cost_per_mwyr] .* vNewPowTraCap[l] for l in L))
+
+#Power and H2 Demads
 @expression(CEM, ePowDemandHSC[w in W, t in T, z in Z], sum(hsc_gen[h, :pow_demand_mwh_p_tonne]*vH2Gen[h,w,t]*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) #= + 
                                                 sum(hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,w,t]*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) +
                                                 sum(hsc_pipelines[i, :comp_pow_mwh_per_tonne]*vH2Flow[i,w,t]*(H2_Network[i,z]==1 ? 1 : 0) for i in I)=#
@@ -259,10 +258,12 @@ CEM = Model(Gurobi.Optimizer)
 @expression(CEM, pow_D[w in W, t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[w,t,z])
 @expression(CEM, H2_D[w in W, t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[w,t,z])
 
-@expression(CEM, eZonalEmissionCapByWeek[z in Z, w in W], sum(vPowGen[g,w,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]] for g in G, t in T) + 
-                                                          sum(vH2Gen[h,w,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H, t in T))
+@expression(CEM, eEmissionByWeek[w in W], sum(vPowGen[g,w,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]] for g in G, t in T) + 
+                                                          sum(vH2Gen[h,w,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H, t in T)
+)
+
 #Defining Objective Function
-@expression(CEM, eEmissionCost, sum(sum(vExtraEmmisionByZone[z,w] for w in W)*zones[z, :emission_cost] for z in Z))
+@expression(CEM, eEmissionCost, sum(vExtraEmmisionByWeek[w] for w in W))
 
 obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ eCostPowStoVar .+ eCostPowNSD .+ eCostPowGenStart).+ 
       (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2StoVar.+ eCostH2NSD .+ eCostH2GenStart) .+ eEmissionCost
@@ -280,7 +281,7 @@ obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ e
 
 # Power Balance #
 @constraint(CEM, cPowerBalance[z in Z, w in W,t in T],
-    ePowGenByZone[z,w,t] .- eNet_Pow_Flow[z,w,t] .- ePow_Loss_By_Zone[z,w,t] .+ ePowStoDisByZone[z,w,t] .- ePowStoChaByZone[z,w,t] .+ vPowNSD[z,w,t] == pow_D[w,t,z]
+    ePowGenByZone[z,w,t] .- eNet_Pow_Flow[z,w,t] .- ePow_Loss_By_Zone[z,w,t] .+ ePowStoDisByZone[z,w,t] .- ePowStoChaByZone[z,w,t] .+ vPowNSD[z,w,t] .- vPowCrt[z,w,t] == pow_D[w,t,z]
 )
 
 # Power Generation #
@@ -296,9 +297,9 @@ end
 @constraint(CEM, cMaxPowGen[g in G_ren, w in W, t in T], vPowGen[g,w,t] .- eTotPowGenCap[g] .* pow_gen_var[H_w[w][t], pow_gen[g, :resource]] <= 0)
 @constraint(CEM, cMaxPowGenTher[g in G_ther, w in W, t in T], vPowGen[g,w,t] .- (pow_gen[g, :rep_capacity].*pow_gen[g,:max_op_level].*vPowGenOnline[g,w,t]) <= 0)
 @constraint(CEM, cMinPowGenTher[g in G_ther,w in W,t in T], (pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,w,t]) .- vPowGen[g,w,t] <= 0)
-@constraint(CEM, cPowOnlineUnits[g in G_ther, w in W, t in T], vPowGenOnline[g,w,t] <= eTotPowGenUnit[g])
-@constraint(CEM, cPowStartLimits[g in G_ther,w in W,t in T], vPowGenStart[g,w,t]<= eTotPowGenUnit[g]-vPowGenOnline[g,w,t])
-@constraint(CEM, cPowShutLimits[g in G_ther,w in W,t in T], vPowGenShut[g,w,t] <= vPowGenOnline[g,w,t])
+@constraint(CEM, cPowOnlineUnits[g in G_ther, w in W, t in T], vPowGenOnline[g,w,t] .- eTotPowGenUnit[g] <= 0)
+@constraint(CEM, cPowStartLimits[g in G_ther,w in W,t in T], vPowGenStart[g,w,t] .- eTotPowGenUnit[g] .+ vPowGenOnline[g,w,t] <= 0)
+@constraint(CEM, cPowShutLimits[g in G_ther,w in W,t in T], vPowGenShut[g,w,t] .- vPowGenOnline[g,w,t]<= 0)
 #Cyclic constraint on Thermal power units
 @constraint(CEM, cPowUnitOnlineCon[g in G_ther, w in W, t in 2:length(T)], vPowGenOnline[g,w,t] - vPowGenOnline[g,w,t-1] == vPowGenStart[g,w,t]-vPowGenShut[g,w,t])
 @constraint(CEM, cPowUnitOnlineFirst[g in G_ther, w in W], vPowGenOnline[g,w,1] - vPowGenOnlineFirst[g,w] == vPowGenStart[g,w,1]-vPowGenShut[g,w,1])
@@ -378,7 +379,7 @@ end
 # H2 Balance constraint
 @constraint(CEM, cH2Balance[z in Z, w in W, t in T],
   sum((vH2Gen[h,w,t] .- eH2GenEvap[h,w,t])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) .- sum(H2_Network[i,z]*vH2Flow[i,w,t] for i in I) .- 0.5*sum(abs(H2_Network[i,z])*vH2Flow[i,w,t]*hsc_pipelines[i, :pipe_loss_coeff] for i in I) .+
-  sum((vH2StoDis[s,w,t] - vH2StoCha[s,w,t])*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) + vH2NSD[z,w,t] == H2_D[w,t,z]
+  sum((vH2StoDis[s,w,t] - vH2StoCha[s,w,t])*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) + vH2NSD[z,w,t] .- vH2Crt[z,w,t]== H2_D[w,t,z]
 )
 
 
@@ -473,9 +474,7 @@ end)
 @constraint(CEM, cH2NSD[z in Z, w in W, t in T], vH2NSD[z,w,t] <= zones[z, :hsc_nsd_share]*H2_D[w, t,z])
 
 #Emission constraint
-@constraint(CEM, cZonalEmissionCapByWeek[z in Z, w in W], eZonalEmissionCapByWeek[z,w] - vExtraEmmisionByZone[z,w] <= vMaxEmissionByWeek[z,w])
-
-@constraint(CEM, cZonalEmissionCap[z in Z], sum(eZonalEmissionCapByWeek[z,w] for w in W) <= 0.05*sum((H2_D[w,t,z]*33.3) +pow_D[w,t,z] for t in T, w in W))
+@constraint(CEM, cZonalEmissionCapByWeek[w in W], eEmissionByWeek[w] - vExtraEmmisionByWeek[w] <= 0.05*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
 
 #Land Use Constraint on each zone
 @constraint(CEM, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
