@@ -629,6 +629,26 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     else
         println("Stopped without full convergence. Current best solution cost = ", round(UB, digits=2))
     end
+    @assert termination_status(MP) == MOI.OPTIMAL
+
+    println("Land‐use slack by zone:")
+    for z in Z
+        used  = value(
+            ePowGenLandUse[z] +
+            ePowStoLandUse[z] +
+            eH2GenLandUse[z] +
+            eH2StoLandUse[z] +
+            eH2PipeLandUse[z]
+        )
+        avail = zones[z, :available_land]
+        slack = avail - used
+
+        println(" Zone $z slack = ",
+                round(slack, digits=2),
+                " (used=", round(used, digits=2),
+                ", avail=", round(avail, digits=2), ")")
+    end
+    
 
 
 #end
