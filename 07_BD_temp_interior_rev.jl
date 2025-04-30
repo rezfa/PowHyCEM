@@ -1,9 +1,6 @@
 using JuMP, Gurobi, DataFrames, CSV, Plots
 
-
 function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
-    
-    
     datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
  # ---------- 1.  raw tables ------------------------------------------------
     pow_gen       = CSV.read(joinpath(datadir, "Powe_Gen_Data.csv"),  DataFrame)
@@ -101,7 +98,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
 
     #Defining the Master Problem
     MP = Model(Gurobi.Optimizer)
-    set_optimizer_attribute(MP, "Method", 2)      
+    #set_optimizer_attribute(MP, "Method", 2)      
     #set_optimizer_attribute(MP, "Crossover", 0)
     set_optimizer_attribute(MP,"MIPGap",1e-3)
     set_optimizer_attribute(MP, "OutputFlag", 0)
@@ -158,7 +155,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
 
     # ---- MP Objective ---- # 
     MP_obj = eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv 
-    @objective(MP, Min, MP_obj .+ sum(theta[w] for w in W))
+    @objective(MP, Min, (MP_obj .+ sum(theta[w] for w in W)))
 
     # ---- MP Constraints ---- #
     @constraint(MP, cMaxPowGenRetCapTher[g in G], vRetPowGenCap[g]*pow_gen[g, :rep_capacity] <= pow_gen[g, :existing_cap])
@@ -210,11 +207,12 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     
     for w in W
         SP_models[w] = Model(Gurobi.Optimizer)
-        set_optimizer_attribute(SP_models[w], "Method", 2)      # use barrier method
+        #set_optimizer_attribute(SP_models[w], "Method", 2)      # use barrier method
         #set_optimizer_attribute(SP_models[w], "Crossover", 0)
         set_optimizer_attribute(SP_models[w], "OutputFlag", 0)
         set_optimizer_attribute(SP_models[w], "LogToConsole", 0)
         set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
+        
     
         # ---- SP Variables ---- #
         # Power Generation DV #
@@ -313,7 +311,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         
         # ---- SP_models[w] Objective ---- #  
         
-        @objective(SP_models[w], Min, eCostPowGenVar .+ eCostPowStoVar .+ eCostPowGenStart .+ eCostH2GenVar .+ eCostH2StoVar .+ eCostH2GenStart .+ eCostPowNSD .+ eCostH2NSD .+ eCostPowCrt .+ eCostH2Crt .+ eEmissionCost)
+        @objective(SP_models[w], Min, (eCostPowGenVar .+ eCostPowStoVar .+ eCostPowGenStart .+ eCostH2GenVar .+ eCostH2StoVar .+ eCostH2GenStart .+ eCostPowNSD .+ eCostH2NSD .+ eCostPowCrt .+ eCostH2Crt .+ eEmissionCost))
 
         # ---- SP Constraints ---- #
         # Power Balance #
@@ -447,10 +445,11 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     LB = -Inf
     UB = Inf
     k = 1
-    max_iter = 500
-    tolerence = 1e-3
+    max_iter = 200
+    tolerence = 1e-2
 
-    
+
+    println("Starting Regularized Benders Decomposition...")
     # Solve initial Master Problem to get a starting investment plan
     optimize!(MP)
     @assert termination_status(MP) == MOI.OPTIMAL
@@ -473,8 +472,10 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         )
     end
 
+    reg_con = nothing
 
     for k in 1:max_iter
+
         
         println("────────────────────────────────────────")
         println(" BENDERS ITERATION $k")
@@ -494,7 +495,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         vNewH2PipeCompCap_val    = value.(vNewH2PipeCompCap)
         vRetH2PipeCompCap_val    = value.(vRetH2PipeCompCap)
         vMaxEmissionByWeek_val   = value.(vMaxEmissionByWeek)
-      
+
         for w in W
             cc = coupling[w]
 
@@ -533,7 +534,17 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
             cc[:emission]  = cEmission
 
         end
+
+        @objective(MP, Min, (MP_obj .+ sum(theta[w] for w in W)))
         
+        if reg_con !== nothing
+            println("Removing old regularization constraint…")
+            set_optimizer_attribute(MP, "Method",    -1)
+            set_optimizer_attribute(MP, "Crossover", -1)
+            delete(MP, reg_con)
+            reg_con = nothing
+        end
+
         Threads.@threads for w in W
             optimize!(SP_models[w])
         end
@@ -543,8 +554,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         end
         
         total_sp_cost = sum(objective_value(SP_models[w]) for w in W) 
-        invest_cost  = objective_value(MP)
-        UB_candidate = invest_cost + total_sp_cost
+        UB_candidate = LB + total_sp_cost
         UB = min(UB, UB_candidate)
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
         println(" → Candidate UB   = ", round(UB_candidate, digits=2), " (Best UB = ",    round(UB,           digits=2), ")")
@@ -565,24 +575,41 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
                 dual(coupling[w][:emission])*(vMaxEmissionByWeek[w] - vMaxEmissionByWeek_val[w])
             )
         end
-        
-        optimize!(MP)
-        println("MP status after adding cuts: ", termination_status(MP))
-        @assert termination_status(MP) == MOI.OPTIMAL
-        LB = objective_value(MP)
-        println(" → Updated MP objective (LB) = ", round(LB, digits=2))
-        println(" → Gap = ", round((UB - LB)*100/abs(LB), digits=2),"%")
 
+        optimize!(MP)
+        LB = objective_value(MP)
+        println(" → LB = ", round(LB, digits=2))
+
+        if (UB - LB)/abs(LB) <= tolerence
+            println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
+            break
+        end
+        
+        # ----------- Regularization (barrier interior solution) -----------
+        alpha = 0.5
+        reg_rhs = LB + alpha * (UB - LB)
+        reg_con = @constraint(MP, MP_obj + sum(theta[w] for w in W) <= reg_rhs)
+        println("Regularization: limiting MP cost <= ", round(reg_rhs, digits=2), " (midpoint between LB and UB) to stabilize solution.")
+        
+        @objective(MP, Min, 0)
+        set_optimizer_attribute(MP, "Method", 2)      # use barrier method
+        set_optimizer_attribute(MP, "Crossover", 0) 
+        optimize!(MP)
+        
+        println(" → Gap = ", round((UB - LB)*100/abs(LB), digits=2))
+        println("MP status in regularized solve: ", termination_status(MP))
+        @assert termination_status(MP) == MOI.OPTIMAL
+
+        
         push!(iters, k)
         push!(LB_hist, LB  / 1e6)   
         push!(UB_hist, UB  / 1e6)
         #push!(gap_hist,(UB - LB) / 1e6)
 
-        # update each curve *without* re-adding legend entries
         if k % 5 == 0 || (UB - LB)/abs(LB + eps()) <= tolerence
             # update curves without legends
-            plot!(plt, iters, LB_hist, color=:blue, label=false)
-            plot!(plt, iters, UB_hist, color=:red,  label=false)
+            plot!(plt, iters, LB_hist, color=:blue, label=false, legend=false)
+            plot!(plt, iters, UB_hist, color=:red,  label=false, legend=false)
             #plot!(plt, iters, gap_hist,color=:black,label="UB–LB")
     
             display(plt)  # redraw large plot
@@ -591,11 +618,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
                     "rel gap = $(round((UB-LB)/abs(LB + eps())*100, digits=3))%")
         end
         
-        if UB - LB <= tolerence
-            println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
-            break
-        end
-        
+        # (We do NOT re-solve MP here; we carry this interior solution forward to subproblems in the next iteration.)
         for w in W
             m = SP_models[w]
             # collect *all* the ConstraintRefs you stored in coupling[w]
@@ -627,6 +650,9 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
 
     end
     
+    println(sum(objective_value(SP_models[w]) for w in W) )
+
+
     println("Done: Iterations = $k, final gap = ", round(UB - LB, digits=4))
     if UB - LB <= tolerence
         println("Optimal objective = ", round(UB, digits=2))
@@ -656,6 +682,5 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
 
 
 end
-
 
 run_benders()

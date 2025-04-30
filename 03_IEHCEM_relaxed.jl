@@ -37,8 +37,6 @@ dfH2Stor = hsc_gen[hsc_gen[!, :h_stor].>= 1, :]
 G = dfGen.r_id
 S = pow_gen[pow_gen[!, :stor_type].> 0, :r_id] #set of all power storages
 Z = zones.zones
-#T = pow_load.time_index
-#T = pow_load[1:8736, :time_index]
 W = collect(1:52)
 hours_per_week = 168
 H_w = [((w - 1) * hours_per_week + 1):(w * hours_per_week) for w in W]
@@ -88,6 +86,11 @@ H2_Network = hsc_pipelines[1:length(I), col_h:col_h+length(Z)-1]
 #Defining the Model
 CEM = Model(Gurobi.Optimizer)
 
+set_optimizer_attribute(CEM, "Method", 2)      # use barrier method
+set_optimizer_attribute(CEM, "Crossover", 0)
+set_optimizer_attribute(CEM, "OutputFlag", 1)
+set_optimizer_attribute(CEM, "LogToConsole", 1)
+set_optimizer_attribute(CEM,"MIPGap",1e-3)
 
 ####################################
 #### Defining Decision Variables ###
