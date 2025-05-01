@@ -1,7 +1,7 @@
 using JuMP, Gurobi, DataFrames, CSV, Plots
 
 
-function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
+#function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
     
     
     datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
@@ -448,7 +448,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     UB = Inf
     k = 1
     max_iter = 500
-    tolerence = 1e-3
+    tolerence = 1e-2
 
     
     # Solve initial Master Problem to get a starting investment plan
@@ -543,7 +543,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         end
         
         total_sp_cost = sum(objective_value(SP_models[w]) for w in W) 
-        invest_cost  = objective_value(MP)
+        invest_cost  = value(MP_obj)
         UB_candidate = invest_cost + total_sp_cost
         UB = min(UB, UB_candidate)
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
@@ -591,7 +591,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
                     "rel gap = $(round((UB-LB)/abs(LB + eps())*100, digits=3))%")
         end
         
-        if UB - LB <= tolerence
+        if (UB - LB)/abs(LB) <= tolerence
             println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
             break
         end
@@ -655,7 +655,6 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     
 
 
-end
-
+#end
 
 run_benders()

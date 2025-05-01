@@ -1,6 +1,6 @@
 using JuMP, Gurobi, DataFrames, CSV, Plots
 
-function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
+#function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
     datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
  # ---------- 1.  raw tables ------------------------------------------------
     pow_gen       = CSV.read(joinpath(datadir, "Powe_Gen_Data.csv"),  DataFrame)
@@ -445,7 +445,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     LB = -Inf
     UB = Inf
     k = 1
-    max_iter = 200
+    max_iter = 50
     tolerence = 1e-2
 
 
@@ -455,7 +455,8 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     @assert termination_status(MP) == MOI.OPTIMAL
     LB = objective_value(MP)  # initial lower bound
     println("Initial MP objective (LB) = ", round(LB, digits=2))
-    
+    investment_cost = value.(MP_obj)
+
     coupling = Dict{Int, Dict{Symbol, Any}}()
     for w in W
         coupling[w] = Dict(
@@ -495,6 +496,8 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         vNewH2PipeCompCap_val    = value.(vNewH2PipeCompCap)
         vRetH2PipeCompCap_val    = value.(vRetH2PipeCompCap)
         vMaxEmissionByWeek_val   = value.(vMaxEmissionByWeek)
+        
+        
 
         for w in W
             cc = coupling[w]
@@ -554,7 +557,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         end
         
         total_sp_cost = sum(objective_value(SP_models[w]) for w in W) 
-        UB_candidate = LB + total_sp_cost
+        UB_candidate = investment_cost + total_sp_cost
         UB = min(UB, UB_candidate)
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
         println(" → Candidate UB   = ", round(UB_candidate, digits=2), " (Best UB = ",    round(UB,           digits=2), ")")
@@ -579,7 +582,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         optimize!(MP)
         LB = objective_value(MP)
         println(" → LB = ", round(LB, digits=2))
-
+        investment_cost = value.(MP_obj)
         if (UB - LB)/abs(LB) <= tolerence
             println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
             break
@@ -681,6 +684,6 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     
 
 
-end
+#end
 
 run_benders()
