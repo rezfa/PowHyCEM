@@ -119,6 +119,8 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     @variable(MP, vRetH2Pipe[i in I]>=0, Int)
     @variable(MP, vNewH2PipeCompCap[i in I]>=0, Int)
     @variable(MP, vRetH2PipeCompCap[i in I]>=0, Int)
+    @variable(MP, vNewH2StoCompCap[s in Q]>=0, Int)
+    @variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)
     # ---- Emission Budget Variable ---- #
     @variable(MP, vMaxEmissionByWeek[w in W]>=0)
     # ---- Set of Cuts Variable ---- #
@@ -129,7 +131,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     @expression(MP, eTotPowStoCap[s in S], pow_gen[s, :existing_cap] .+ pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] .- vRetPowStoCap[s]))
     @expression(MP, eTotH2GenCap[h in H], hsc_gen[h, :existing_cap_tonne_p_hr] .+ hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h] .- vRetH2GenCap[h]))
     @expression(MP, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s] - vRetH2StoCap[s]))
-    #@expression(MP, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s])
+    @expression(MP, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s])
     @expression(MP, eTotH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + vNewH2Pipe[i] - vRetH2Pipe[i])
     @expression(MP, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
     @expression(MP, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
@@ -144,8 +146,8 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     ) 
     @expression(MP, eCostPowTraInv, sum(pow_lines[l, :line_reinforcement_cost_per_mwyr] .* vNewPowTraCap[l] for l in L))
     @expression(MP, eCostH2GenInv, sum(hsc_gen[h, :inv_cost_tonne_hr_p_yr]*vNewH2GenCap[h]*hsc_gen[h, :rep_capacity] + hsc_gen[h, :fom_cost_p_tonne_p_hr_yr]*eTotH2GenCap[h] for h in H))
-    @expression(MP, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + #=hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s]=#
-                                     hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] #=+ hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s]=# for s in Q)
+    @expression(MP, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s] +
+                                     hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] + hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] for s in Q)
     )
     @expression(MP, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
                                         hsc_pipelines[i, :fom_per_length]*hsc_pipelines[i, :distance]*eTotH2Pipe[i] +
@@ -191,7 +193,9 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
       end
     end
     @constraint(MP, cMinH2StoCap[s in Q], hsc_gen[s, :min_cap_stor_tonne] <= eTotH2StoCap[s])
-    #@constraint(MP, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
+    @constraint(MP, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
+    @constraint(MP, cMaxH2StorCompcCap[s in Q], eTotH2StoCompCap[s]<= eTotH2StoCap[s])
+    @constraint(MP, cMinH2StorCompcCap[s in Q], 0.01*eTotH2StoCap[s] <= eTotH2StoCompCap[s])
     @constraint(MP, cMaxH2PipeNum[i in I], eTotH2Pipe[i] <= hsc_pipelines[i, :max_num_pipes])
     @constraint(MP, cMaxRetH2PipeNum[i in I], vRetH2Pipe[i] <= hsc_pipelines[i, :existing_num_pipes])
     @constraint(MP, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
@@ -259,6 +263,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @variable(SP_models[w], eAvailH2StoCap[s in Q]>=0)
         @variable(SP_models[w], eAvailH2Pipe[i in I]>=0)
         @variable(SP_models[w], eAvailH2PipeCompCap[i in I]>=0)
+        @variable(SP_models[w], eAvailH2StoCompCap[s in Q]>=0)
         @variable(SP_models[w], eMaxEmissionByWeek>=0)
         
         # ---- SP_models[w] Expressions ---- #
@@ -421,10 +426,10 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         #H2 Storage constraints
         @constraint(SP_models[w], cH2StoBalance[s in Q, t in 2:length(T)], vH2StoSOC[s,t] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOC[s,t-1] + vH2StoCha[s,t]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,t])
         @constraint(SP_models[w], cH2StoBalanceFirst[s in Q], vH2StoSOC[s,1] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOCFirst[s] + vH2StoCha[s,1]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,1])
-        # H2 Storage constraint
+        @constraint(SP_models[w], cMaxH2StoChar[s in Q,t in T], vH2StoCha[s,t] .- eAvailH2StoCompCap[s] <= 0)
         @constraint(SP_models[w], cMaxH2StoSOC[s in Q, t in T], vH2StoSOC[s,t] .- hsc_gen[s,:h2stor_max_level]*eAvailH2StoCap[s]<= 0)
         @constraint(SP_models[w], cMinH2StoSOC[s in Q, t in T], hsc_gen[s,:h2stor_min_level]*eAvailH2StoCap[s] .- vH2StoSOC[s,t]<= 0 )
-        #@constraint(SP_models[w], cMaxH2StoChar[s in Q in W,t in T], vH2StoCha[s,t] .- eAvailH2StoCompCap[s] <= 0)
+
         # H2 Transmission constraints
         @constraints(SP_models[w], begin 
                         cMaxH2PipeFlowOut[i in I, t in T], vH2Flow[i,t] .- eAvailH2Pipe[i]*hsc_pipelines[i, :max_op_level] <= 0
@@ -495,6 +500,8 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         vRetH2Pipe_val           = value.(vRetH2Pipe)
         vNewH2PipeCompCap_val    = value.(vNewH2PipeCompCap)
         vRetH2PipeCompCap_val    = value.(vRetH2PipeCompCap)
+        vNewH2StoCompCap_val     = value.(vNewH2StoCompCap)
+        vRetH2StoCompCap_val     = value.(vRetH2StoCompCap)
         vMaxEmissionByWeek_val   = value.(vMaxEmissionByWeek)
         
         
@@ -512,6 +519,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
             availH2StoCap    = SP_models[w][:eAvailH2StoCap]
             availH2Pipe      = SP_models[w][:eAvailH2Pipe]
             availH2PipeCompCap = SP_models[w][:eAvailH2PipeCompCap]
+            availH2StoCompCap = SP_models[w][:eAvailH2StoCompCap]
             availeEmissionMaxByWeek = SP_models[w][:eMaxEmissionByWeek]
             
             cAvailPowGenCap = @constraint(SP_models[w], [g in G], availPowGenCap[g] == value(eTotPowGenCap[g]))
@@ -523,6 +531,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
             cAvailH2StoCap = @constraint(SP_models[w], [s in Q], availH2StoCap[s] == value(eTotH2StoCap[s]))
             cAvailH2Pipe = @constraint(SP_models[w], [i in I], availH2Pipe[i] == value(eTotH2Pipe[i]))
             cAvailH2PipeCompCap = @constraint(SP_models[w], [i in I], availH2PipeCompCap[i] == value(eTotH2PipeCompCap[i]))
+            cAvailH2StoCompCap = @constraint(SP_models[w], [s in Q], availH2StoCompCap[s] == value(eTotH2StoCompCap[s]))
             cEmission = @constraint(SP_models[w], availeEmissionMaxByWeek == value(vMaxEmissionByWeek[w]))
 
             cc[:gencap]    = Dict(g => cAvailPowGenCap[g]    for g in G)
@@ -534,6 +543,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
             cc[:h2stocap]  = Dict(s => cAvailH2StoCap[s]    for s in Q)
             cc[:h2pipe]    = Dict(i => cAvailH2Pipe[i]      for i in I)
             cc[:h2pipecomp]= Dict(i => cAvailH2PipeCompCap[i] for i in I)
+            cc[:h2stocomp] = Dict(s => cAvailH2StoCompCap[s] for s in Q)
             cc[:emission]  = cEmission
 
         end
@@ -575,6 +585,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
                 sum(dual(coupling[w][:h2stocap][s])*hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s]-vRetH2StoCap[s] - vNewH2StoCap_val[s] + vRetH2StoCap_val[s]) for s in Q) +
                 sum(dual(coupling[w][:h2pipe][i])*(vNewH2Pipe[i]-vRetH2Pipe[i] - vNewH2Pipe_val[i] + vRetH2Pipe_val[i]) for i in I) +
                 sum(dual(coupling[w][:h2pipecomp][i])*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - vNewH2PipeCompCap_val[i]) + vRetH2PipeCompCap_val[i] for i in I) +
+                sum(dual(coupling[w][:h2stocomp][s])*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - vNewH2StoCompCap_val[s] + vRetH2StoCompCap_val[s]) for s in Q) +
                 dual(coupling[w][:emission])*(vMaxEmissionByWeek[w] - vMaxEmissionByWeek_val[w])
             )
         end
