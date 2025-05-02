@@ -109,6 +109,8 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 @variable(CEM, vPowGenOnlineFirst[g in G_ther, w in W]>=0)
 @variable(CEM, vPowGenStart[g in G_ther, w in W, t in T]>=0)
 @variable(CEM, vPowGenShut[g in G_ther, w in W, t in T]>=0)
+@variable(CEM, vPowResUp[g in G_ther, w in W, t in T]>=0)
+@variable(CEM, vPowResDn[g in G_ther, w in W, t in T]>=0)
 
 # Power Storage DV 
 @variable(CEM, vNewPowStoCap[s in S]>=0, Int)
@@ -172,13 +174,10 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 #important: Since the investment decisions are integer now, the unit capacity for every source is considered 1, while for thermal units is representative capacity of the cluster
 #The same should be applied for land use --> for thermal units: Land use = (vNewPowGenCap[g] - vRetPowGenCap[g])* eRepPowGenCap *  pow_gen[s, :land_use_km2_p_cap]
   # Power Generation Expressions #
-#@expression(CEM, eRepPowGenCap[g in G_ther], pow_gen[g, :existing_cap] / dfGen[g, :num_units])
 @expression(CEM, eTotPowGenCap[g in G], pow_gen[g, :existing_cap] .+ pow_gen[g, :rep_capacity]*(vNewPowGenCap[g] .- vRetPowGenCap[g]))
 @expression(CEM, eTotPowGenUnit[g in G_ther], pow_gen[g, :num_units]+vNewPowGenCap[g]-vRetPowGenCap[g])
 @expression(CEM, ePowGenByZone[z in Z, w in W, t in T], sum(vPowGen[g,w,t] * (pow_gen[g, :zone] == z ? 1 : 0) for g in G))
-#@expression(CEM, eTotPowGenCapByZone[z in Z], sum(eTotPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in G_ther))
-#@expression(CEM, ePowResReqUp[z in Z, t in T], 0.1 * eTotPowGenCapByZone[z] .+ 0.05 * pow_demand[t,z])
-#@expression(CEM, ePowResReqDn[z in Z, t in T], 0.05 * pow_demand[t,z])
+@expression(CEM, eTotPowGenCapByZone[z in Z], sum(eTotPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in G_ther))
 #@expression(CEM, ePowGenEmiByZone[z in Z], sum(CO2_content[pow_gen[g, :fuel]] * pow_gen[g,:heat_rate_mmbtu_per_yr]*vPowGen[g,w,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G_ther, w in W, t in T))
 @expression(CEM, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
 
@@ -267,6 +266,9 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
                                                   sum(vH2Gen[h,w,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H, t in T)
 )
 
+@expression(CEM, ePowResReqUp[z in Z, w in W, t in T], 0.1 * eTotPowGenCapByZone[z] .+ 0.05 * pow_D[w,t,z])
+@expression(CEM, ePowResReqDn[z in Z, w in W, t in T], 0.05 * pow_D[w,t,z])
+
 #Defining Objective Function
 @expression(CEM, eEmissionCost, sum(vExtraEmmisionByWeek[z,w]*zones[z,:emission_cost] for z in Z, w in W))
 
@@ -343,12 +345,12 @@ end
 @constraint(CEM, cMinDnTimePowGen[g in G_ther,w in W,t in T], sum(vPowGenShut[g,w,tt] for tt in intersect(T, (t - pow_gen[g, :down_time]):t)) <= eTotPowGenUnit[g] - vPowGenOnline[g,w,t])
 
 #Spinning Reserve Constraints
-#@constraint(CEM, cPowResUpMax[g in G_ther, t in T], vPowResUp[g,t] .+ vPowGen[g,t] .-  pow_gen[g, :rep_capacity]*pow_gen[g,:max_op_level]*vPowGenOnline[g,t] <=0)
-#@constraint(CEM, cPowResDnMax[g in G_ther, t in T], vPowResDn[g,t] .+ pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,t] .- vPowGen[g,t] <= 0) 
-#@constraint(CEM, cPowResUP[g in G_ther, t in T], vPowResUp[g,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_up] <=0)
-#@constraint(CEM, cPowResDn[g in G_ther, t in T], vPowResDn[g,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_dn] <=0)
-#@constraint(CEM, cPowResReqUp[z in Z, t in T], ePowResReqUp[z,t] .- sum(vPowResUp[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
-#@constraint(CEM, cPowResReqDn[z in Z, t in T], ePowResReqDn[z,t] .- sum(vPowResDn[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
+@constraint(CEM, cPowResUpMax[g in G_ther, w in W,t in T], vPowResUp[g,w,t] .+ vPowGen[g,w,t] .-  pow_gen[g, :rep_capacity]*pow_gen[g,:max_op_level]*vPowGenOnline[g,w,t] <=0)
+@constraint(CEM, cPowResDnMax[g in G_ther, w in W,t in T], vPowResDn[g,w,t] .+ pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,w,t] .- vPowGen[g,w,t] <= 0) 
+@constraint(CEM, cPowResUP[g in G_ther, w in W, t in T], vPowResUp[g,w,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_up] <=0)
+@constraint(CEM, cPowResDn[g in G_ther, w in W, t in T], vPowResDn[g,w,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_dn] <=0)
+@constraint(CEM, cPowResReqUp[z in Z, w in W, t in T], ePowResReqUp[z,w,t] .- sum(vPowResUp[g,w,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
+@constraint(CEM, cPowResReqDn[z in Z, w in W, t in T], ePowResReqDn[z,w,t] .- sum(vPowResDn[g,w,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
 
 # Power Storage #
 @constraint(CEM, cMaxRetPowSto[s in S], vRetPowStoCap[s]*pow_gen[s, :rep_capacity] <= pow_gen[s, :existing_cap_mwh])
@@ -454,7 +456,7 @@ end
 @constraint(CEM, cMinH2StoSOC[s in Q, w in W, t in T], hsc_gen[s,:h2stor_min_level]*eTotH2StoCap[s]<= vH2StoSOC[s,w,t])
 @constraint(CEM, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
 @constraint(CEM, cMaxH2StorCompcCap[s in Q], eTotH2StoCompCap[s]<= eTotH2StoCap[s])
-@constraint(CEM, cMinH2StorCompcCap[s in Q], 0.01*eTotH2StoCap[s] <= eTotH2StoCompCap[s])
+@constraint(CEM, cMinH2StorCompcCap[s in Q], 0.1*eTotH2StoCap[s] <= eTotH2StoCompCap[s])
 @constraint(CEM, cMaxH2StoChar[s in Q,w in W,t in T], vH2StoCha[s,w,t] <= eTotH2StoCompCap[s])
 
 # H2 Transmission constraints

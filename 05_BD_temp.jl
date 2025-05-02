@@ -228,6 +228,8 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @variable(SP_models[w], vPowGenOnlineFirst[g in G_ther]>=0)
         @variable(SP_models[w], vPowGenStart[g in G_ther, t in T]>=0)
         @variable(SP_models[w], vPowGenShut[g in G_ther, t in T]>=0)
+        @variable(SP_models[w], vPowResUp[g in G_ther, t in T]>=0)
+        @variable(SP_models[w], vPowResDn[g in G_ther, t in T]>=0)
         # Power Storage DV 
         @variable(SP_models[w], vPowStoCha[s in S, t in T]>=0)
         @variable(SP_models[w], vPowStoDis[s in S, t in T]>=0)
@@ -271,6 +273,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         # ---- SP_models[w] Expressions ---- #
         # Power Generation Expressions #
         @expression(SP_models[w], ePowGenByZone[z in Z, t in T], sum(vPowGen[g,t] * (pow_gen[g, :zone] == z ? 1 : 0) for g in G))
+        @expression(SP_models[w], eTotPowGenCapByZone[z in Z], sum(eAvailPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in G_ther))
         # Power Storage Expressions #
         @expression(SP_models[w], ePowStoChaByZone[z in Z, t in T], sum(vPowStoCha[s,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
         @expression(SP_models[w], ePowStoDisByZone[z in Z, t in T], sum(vPowStoDis[s,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
@@ -294,6 +297,9 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @expression(SP_models[w], eH2DemandPow[z in Z, t in T], sum(pow_gen[g, :h2_demand_tonne_p_mwh]*vPowGen[g,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G))
         @expression(SP_models[w], pow_D[t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[z,t])
         @expression(SP_models[w], H2_D[t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[z,t])
+        #Power Generation reserve constraints
+        @expression(SP_models[w], ePowResReqUp[z in Z, t in T], 0.1*eTotPowGenCapByZone[z] +  0.05 * (pow_D[t,z] - vPowNSD[z,t]))
+        @expression(SP_models[w], ePowResReqDn[z in Z, t in T], 0.05 * (pow_D[t,z]-vPowNSD[z,t]))
         # Emission Expressions
         @expression(SP_models[w], eEmissionByWeek, 
             sum(vPowGen[g,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]] for g in G, t in T) + 
@@ -337,6 +343,13 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @constraint(SP_models[w], cMaxPowGenTher[g in G_ther, t in T], vPowGen[g,t] .- (pow_gen[g, :rep_capacity].*pow_gen[g,:max_op_level].*vPowGenOnline[g,t]) <= 0)
         @constraint(SP_models[w], cMinPowGenTher[g in G_ther, t in T], (pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,t]) .- vPowGen[g,t] <= 0)
         @constraint(SP_models[w], cPowShutLimits[g in G_ther, t in T], vPowGenShut[g,t] .- vPowGenOnline[g,t] <= 0)
+        #Spinning Reserve Constraints
+        @constraint(SP_models[w], cPowResUpMax[g in G_ther, t in T], vPowResUp[g,t] .+ vPowGen[g,t] .-  pow_gen[g, :rep_capacity]*pow_gen[g,:max_op_level]*vPowGenOnline[g,t] <=0)
+        @constraint(SP_models[w], cPowResDnMax[g in G_ther, t in T], vPowResDn[g,t] .+ pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,t] .- vPowGen[g,t] <= 0) 
+        @constraint(SP_models[w], cPowResUP[g in G_ther, t in T], vPowResUp[g,t] .- eAvailPowGenCap[g]*pow_gen[g,:ramp_up] <=0)
+        @constraint(SP_models[w], cPowResDn[g in G_ther, t in T], vPowResDn[g,t] .- eAvailPowGenCap[g]*pow_gen[g,:ramp_dn] <=0)
+        @constraint(SP_models[w], cPowResReqUp[z in Z, t in T], ePowResReqUp[z,t] .- sum(vPowResUp[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
+        @constraint(SP_models[w], cPowResReqDn[z in Z, t in T], ePowResReqDn[z,t] .- sum(vPowResDn[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
         #Cyclic constraint on Thermal power units
         @constraint(SP_models[w], cPowUnitOnlineCon[g in G_ther, t in 2:length(T)], vPowGenOnline[g,t] - vPowGenOnline[g,t-1] == vPowGenStart[g,t]-vPowGenShut[g,t])
         @constraint(SP_models[w], cPowUnitOnlineFirst[g in G_ther], vPowGenOnline[g,1] - vPowGenOnlineFirst[g] == vPowGenStart[g,1]-vPowGenShut[g,1])
@@ -452,7 +465,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     LB = -Inf
     UB = Inf
     k = 1
-    max_iter = 500
+    max_iter = 100
     tolerence = 1e-2
 
     
