@@ -1,9 +1,6 @@
 using JuMP, Gurobi, DataFrames, CSV, Plots
 
-
 #function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
-    
-    
     datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
  # ---------- 1.  raw tables ------------------------------------------------
     pow_gen       = CSV.read(joinpath(datadir, "Powe_Gen_Data.csv"),  DataFrame)
@@ -102,8 +99,8 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     #Defining the Master Problem
     MP = Model(Gurobi.Optimizer)
     set_optimizer_attribute(MP, "Method", 2)      
-    #set_optimizer_attribute(MP, "Crossover", 0)
-    set_optimizer_attribute(MP,"MIPGap",1e-3)
+    set_optimizer_attribute(MP, "Crossover", 0)
+    #set_optimizer_attribute(MP,"MIPGap",1e-3)
     set_optimizer_attribute(MP, "OutputFlag", 0)
     set_optimizer_attribute(MP, "LogToConsole", 0)
 
@@ -123,7 +120,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     @variable(MP, vNewH2PipeCompCap[i in I]>=0, Int)
     @variable(MP, vRetH2PipeCompCap[i in I]>=0, Int)
     @variable(MP, vNewH2StoCompCap[s in Q]>=0, Int)
-    @variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)   
+    @variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)
     # ---- Emission Budget Variable ---- #
     @variable(MP, vMaxEmissionByWeek[w in W]>=0)
     # ---- Set of Cuts Variable ---- #
@@ -160,7 +157,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
 
     # ---- MP Objective ---- # 
     MP_obj = eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv 
-    @objective(MP, Min, MP_obj .+ sum(theta[w] for w in W))
+    @objective(MP, Min, (MP_obj .+ sum(theta[w] for w in W)))
 
     # ---- MP Constraints ---- #
     @constraint(MP, cMaxPowGenRetCapTher[g in G], vRetPowGenCap[g]*pow_gen[g, :rep_capacity] <= pow_gen[g, :existing_cap])
@@ -199,6 +196,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     @constraint(MP, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
     @constraint(MP, cMaxH2StorCompcCap[s in Q], eTotH2StoCompCap[s]<= eTotH2StoCap[s])
     @constraint(MP, cMinH2StorCompcCap[s in Q], 0.01*eTotH2StoCap[s] <= eTotH2StoCompCap[s])
+    
     @constraint(MP, cMaxH2PipeNum[i in I], eTotH2Pipe[i] <= hsc_pipelines[i, :max_num_pipes])
     @constraint(MP, cMaxRetH2PipeNum[i in I], vRetH2Pipe[i] <= hsc_pipelines[i, :existing_num_pipes])
     @constraint(MP, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
@@ -214,11 +212,12 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     
     for w in W
         SP_models[w] = Model(Gurobi.Optimizer)
-        set_optimizer_attribute(SP_models[w], "Method", 2)      # use barrier method
-        #set_optimizer_attribute(SP_models[w], "Crossover", 0)
+        #set_optimizer_attribute(SP_models[w], "Method", 2)      # use barrier method
+        set_optimizer_attribute(SP_models[w], "Crossover", 0)
         set_optimizer_attribute(SP_models[w], "OutputFlag", 0)
         set_optimizer_attribute(SP_models[w], "LogToConsole", 0)
-        set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
+        #set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
+        
     
         # ---- SP Variables ---- #
         # Power Generation DV #
@@ -291,15 +290,14 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         # Sector-coupling Demands
         @expression(SP_models[w], ePowDemandHSC[z in Z, t in T], 
             sum(hsc_gen[h, :pow_demand_mwh_p_tonne]*vH2Gen[h,t]*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) +
-            sum(hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,t]*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) +
-            sum(hsc_pipelines[i, :comp_pow_mwh_per_tonne]*vH2Flow[i,t]*(H2_Network[i,z]==1 ? 1 : 0) for i in I)
+            sum(hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,t]*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) 
         )
         @expression(SP_models[w], eH2DemandPow[z in Z, t in T], sum(pow_gen[g, :h2_demand_tonne_p_mwh]*vPowGen[g,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G))
         @expression(SP_models[w], pow_D[t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[z,t])
         @expression(SP_models[w], H2_D[t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[z,t])
         #Power Generation reserve constraints
-        @expression(SP_models[w], ePowResReqUp[z in Z, t in T], 0.1*eTotPowGenCapByZone[z] +  0.05 * (pow_D[t,z] - vPowNSD[z,t]))
-        @expression(SP_models[w], ePowResReqDn[z in Z, t in T], 0.05 * (pow_D[t,z]-vPowNSD[z,t]))
+        @expression(SP_models[w], ePowResReqUp[z in Z, t in T], 0.1*eTotPowGenCapByZone[z])
+        @expression(SP_models[w], ePowResReqDn[z in Z, t in T], 0.05*eTotPowGenCapByZone[z])
         # Emission Expressions
         @expression(SP_models[w], eEmissionByWeek, 
             sum(vPowGen[g,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]] for g in G, t in T) + 
@@ -324,16 +322,16 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         
         # ---- SP_models[w] Objective ---- #  
         
-        @objective(SP_models[w], Min, eCostPowGenVar .+ eCostPowStoVar .+ eCostPowGenStart .+ eCostH2GenVar .+ eCostH2StoVar .+ eCostH2GenStart .+ eCostPowNSD .+ eCostH2NSD .+ eCostPowCrt .+ eCostH2Crt .+ eEmissionCost)
+        @objective(SP_models[w], Min, (eCostPowGenVar .+ eCostPowStoVar .+ eCostPowGenStart .+ eCostH2GenVar .+ eCostH2StoVar .+ eCostH2GenStart .+ eCostPowNSD .+ eCostH2NSD .+ eCostPowCrt .+ eCostH2Crt .+ eEmissionCost))
 
         # ---- SP Constraints ---- #
         # Power Balance #
         @constraint(SP_models[w], cPowerBalance[z in Z, t in T],
-                ePowGenByZone[z,t] .- eNet_Pow_Flow[z,t] .- ePow_Loss_By_Zone[z,t] .+ ePowStoDisByZone[z,t] .- ePowStoChaByZone[z,t] .+ vPowNSD[z,t] .- vPowCrt[z,t] == pow_D[t,z]
+                ePowGenByZone[z,t] .+ eNet_Pow_Flow[z,t] .- ePow_Loss_By_Zone[z,t] .+ ePowStoDisByZone[z,t] .- ePowStoChaByZone[z,t] .+ vPowNSD[z,t] .- vPowCrt[z,t] == pow_D[t,z]
         )
         # H2 Balance #
         @constraint(SP_models[w], cH2Balance[z in Z, t in T],
-            eH2GenByZone[z,t] .- eNet_H2_Flow[z,t ] .- eH2_Loss_By_Zone[z,t] .+ eH2StoDisByZone[z,t] .- eH2StoChaByZone[z,t] .+ vH2NSD[z,t] .- vH2Crt[z,t] == H2_D[t,z]
+            eH2GenByZone[z,t] .+ eNet_H2_Flow[z,t ] .- eH2_Loss_By_Zone[z,t] .+ eH2StoDisByZone[z,t] .- eH2StoChaByZone[z,t] .+ vH2NSD[z,t] .- vH2Crt[z,t] == H2_D[t,z]
         )
 
         # Power Generation #
@@ -359,6 +357,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @constraint(SP_models[w], cPowGenRampUpFirst[g in G_ren], vPowGen[g,1]-vPowGenFirst[g] .- pow_gen[g, :ramp_up]*eAvailPowGenCap[g]<=0)
         @constraint(SP_models[w], cPowGenRampDn[g in G_ren, t in 2:length(T)], vPowGen[g,t-1]-vPowGen[g,t] .- pow_gen[g, :ramp_dn] * eAvailPowGenCap[g]<= 0)
         @constraint(SP_models[w], cPowGenRampDnFirst[g in G_ren], vPowGenFirst[g]-vPowGen[g,1] .- pow_gen[g, :ramp_dn] * eAvailPowGenCap[g]<= 0)
+        @constraint(SP_models[w], cPowGenCycle[g in G_ren], vPowGenFirst[g] == vPowGen[g,168])
         #Ramping of Thermal units
         @constraint(SP_models[w], cTherPowGenRampDn[g in G_ther,t in 2:length(T)], 
             vPowGen[g,t-1] .- vPowGen[g,t] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_dn] *(vPowGenOnline[g,t].-vPowGenStart[g,t])
@@ -366,7 +365,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         )
         @constraint(SP_models[w], cTherPowGenRampDnFirst[g in G_ther],    
         vPowGenFirst[g] .- vPowGen[g,1] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_dn] *(vPowGenOnline[g,1].-vPowGenStart[g,1])
-        .+ pow_gen[g, :rep_capacity]*vPowGenStart[g,1]*pow_gen[g,:min_op_level] .- vPowGenShut[g,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][w], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_dn]))<=0
+        .+ pow_gen[g, :rep_capacity]*vPowGenStart[g,1]*pow_gen[g,:min_op_level] .- vPowGenShut[g,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][1], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_dn]))<=0
         )
 
         @constraint(SP_models[w], cTherPowGenRampUp[g in G_ther, t in 2:length(T)], 
@@ -376,7 +375,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
 
         @constraint(SP_models[w], cTherPowGenRampUpFirst[g in G_ther], 
         vPowGen[g,1] .- vPowGenFirst[g] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_up] *(vPowGenOnline[g,1].-vPowGenStart[g,1])
-        .- pow_gen[g, :rep_capacity]*vPowGenShut[g,1]*pow_gen[g,:min_op_level] .+ vPowGenStart[g,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][w], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_up]))<=0
+        .- pow_gen[g, :rep_capacity]*vPowGenShut[g,1]*pow_gen[g,:min_op_level] .+ vPowGenStart[g,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][1], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_up]))<=0
         )
         #Minimum up/donw time for thermal generators
         @constraint(SP_models[w], cMinUpTimePowGen[g in G_ther,t in T], sum(vPowGenStart[g,tt] for tt in intersect(T, (t - pow_gen[g, :up_time]):t)) .- vPowGenOnline[g,t]<= 0)
@@ -404,7 +403,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @constraint(SP_models[w], cMaxH2GenTher[h in H_ther, t in T], vH2Gen[h,t] .- hsc_gen[h, :max_op_level] * hsc_gen[h, :rep_capacity] * vH2GenOnline[h,t]*hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]]<= 0)
         @constraint(SP_models[w], cMinH2GenTher[h in H_ther, t in T], hsc_gen[h, :min_op_level] * hsc_gen[h, :rep_capacity] * vH2GenOnline[h,t]*hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]] .- vH2Gen[h,t]<= 0)
         @constraint(SP_models[w], cH2ShutLimits[h in H_ther, t in T], vH2GenShut[h,t] .- vH2GenOnline[h,t]<= 0)
-        @constraint(SP_models[w], cPowGenCycle[g in G_ren], vPowGenFirst[g] == vPowGen[g,168])
+        
         # H2 thermal units cyclic constraints
         @constraint(SP_models[w], cH2UnitOnlineCon[h in H_ther, t in 2:length(T)], vH2GenOnline[h,t] .- vH2GenOnline[h,t-1] == vH2GenStart[h,t].- vH2GenShut[h,t])
         @constraint(SP_models[w], cH2UnitOnlineConFirst[h in H_ther], vH2GenOnline[h,1] .- vH2GenOnlineFirst[h] == vH2GenStart[h,1] .- vH2GenShut[h,1])
@@ -426,7 +425,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         )
         @constraint(SP_models[w], cTherH2GenRampDnFirst[h in H_ther], 
             vH2GenFirst[h] .- vH2Gen[h,1] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,1].-vH2GenStart[h,1])
-            .+ hsc_gen[h, :rep_capacity]*vH2GenStart[h,1]*hsc_gen[h,:min_op_level] .- vH2GenShut[h,1]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][w], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_down_percentage]))<=0
+            .+ hsc_gen[h, :rep_capacity]*vH2GenStart[h,1]*hsc_gen[h,:min_op_level] .- vH2GenShut[h,1]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][1], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_down_percentage]))<=0
         )
 
         @constraint(SP_models[w], cTherH2GenRampUp[h in H_ther, t in 2:length(T)], 
@@ -436,15 +435,16 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
 
         @constraint(SP_models[w], cTherH2GenRampUpFirst[g in H_ther], 
             vH2Gen[g,1] .- vH2GenFirst[g] .- hsc_gen[g, :rep_capacity]*hsc_gen[g,:ramp_up_percentage] *(vH2GenOnline[g,1].-vH2GenStart[g,1])
-            .- hsc_gen[g, :rep_capacity]*vH2GenShut[g,1]*hsc_gen[g,:min_op_level] .+ vH2GenStart[g,1]*hsc_gen[g, :rep_capacity]*min(hsc_gen_var[H_w[w][w], hsc_gen[g, :resource]],max(hsc_gen[g,:min_op_level],hsc_gen[g,:ramp_up_percentage]))<=0
+            .- hsc_gen[g, :rep_capacity]*vH2GenShut[g,1]*hsc_gen[g,:min_op_level] .+ vH2GenStart[g,1]*hsc_gen[g, :rep_capacity]*min(hsc_gen_var[H_w[w][1], hsc_gen[g, :resource]],max(hsc_gen[g,:min_op_level],hsc_gen[g,:ramp_up_percentage]))<=0
         )
         #H2 Storage constraints
         @constraint(SP_models[w], cH2StoBalance[s in Q, t in 2:length(T)], vH2StoSOC[s,t] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOC[s,t-1] + vH2StoCha[s,t]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,t])
         @constraint(SP_models[w], cH2StoBalanceFirst[s in Q], vH2StoSOC[s,1] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOCFirst[s] + vH2StoCha[s,1]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,1])
+        @constraint(SP_models[w], cMaxH2StoChar[s in Q,t in T], vH2StoCha[s,t] .- eAvailH2StoCompCap[s] <= 0)
+        @constraint(SP_models[w], cH2StoCycle[s in Q], vH2StoSOCFirst[s] == vH2StoSOC[s,168])
         @constraint(SP_models[w], cMaxH2StoSOC[s in Q, t in T], vH2StoSOC[s,t] .- hsc_gen[s,:h2stor_max_level]*eAvailH2StoCap[s]<= 0)
         @constraint(SP_models[w], cMinH2StoSOC[s in Q, t in T], hsc_gen[s,:h2stor_min_level]*eAvailH2StoCap[s] .- vH2StoSOC[s,t]<= 0 )
-        @constraint(SP_models[w], cMaxH2StoChar[s in Q,t in T], vH2StoCha[s,t] .- eAvailH2StoCompCap[s] <= 0)
-        
+
         # H2 Transmission constraints
         @constraints(SP_models[w], begin 
                         cMaxH2PipeFlowOut[i in I, t in T], vH2Flow[i,t] .- eAvailH2Pipe[i]*hsc_pipelines[i, :max_op_level] <= 0
@@ -466,15 +466,17 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     UB = Inf
     k = 1
     max_iter = 100
-    tolerence = 1e-2
+    tolerence = 1e-3
 
-    
+
+    println("Starting Regularized Benders Decomposition...")
     # Solve initial Master Problem to get a starting investment plan
     optimize!(MP)
     @assert termination_status(MP) == MOI.OPTIMAL
     LB = objective_value(MP)  # initial lower bound
     println("Initial MP objective (LB) = ", round(LB, digits=2))
-    
+    investment_cost = value.(MP_obj)
+
     coupling = Dict{Int, Dict{Symbol, Any}}()
     for w in W
         coupling[w] = Dict(
@@ -491,8 +493,10 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         )
     end
 
+    reg_con = nothing
 
     for k in 1:max_iter
+
         
         println("────────────────────────────────────────")
         println(" BENDERS ITERATION $k")
@@ -514,7 +518,9 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         vNewH2StoCompCap_val     = value.(vNewH2StoCompCap)
         vRetH2StoCompCap_val     = value.(vRetH2StoCompCap)
         vMaxEmissionByWeek_val   = value.(vMaxEmissionByWeek)
-      
+        
+        
+
         for w in W
             cc = coupling[w]
 
@@ -556,7 +562,17 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
             cc[:emission]  = cEmission
 
         end
+
+        @objective(MP, Min, (MP_obj .+ sum(theta[w] for w in W)))
         
+        if reg_con !== nothing
+            println("Removing old regularization constraint…")
+            set_optimizer_attribute(MP, "Method",    -1)
+            set_optimizer_attribute(MP, "Crossover", -1)
+            delete(MP, reg_con)
+            reg_con = nothing
+        end
+
         Threads.@threads for w in W
             optimize!(SP_models[w])
         end
@@ -566,8 +582,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         end
         
         total_sp_cost = sum(objective_value(SP_models[w]) for w in W) 
-        invest_cost  = value(MP_obj)
-        UB_candidate = invest_cost + total_sp_cost
+        UB_candidate = investment_cost + total_sp_cost
         UB = min(UB, UB_candidate)
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
         println(" → Candidate UB   = ", round(UB_candidate, digits=2), " (Best UB = ",    round(UB,           digits=2), ")")
@@ -581,28 +596,45 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
                 sum(dual(coupling[w][:stocap][s])*pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] - vRetPowStoCap[s] - vNewPowStoCap_val[s] + vRetPowStoCap_val[s]) for s in S) +
                 sum(dual(coupling[w][:tracap][l])*(vNewPowTraCap[l] - vNewPowTraCap_val[l]) for l in L) +
                 sum(dual(coupling[w][:h2gen][h])*hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h]-vRetH2GenCap[h] - vNewH2GenCap_val[h] + vRetH2GenCap_val[h]) for h in H_dis) +
-                sum(dual(coupling[w][:h2genunit][h])*hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h]-vRetH2GenCap[h] - vNewH2GenCap_val[h] + vRetH2GenCap_val[h]) for h in H_ther) +
+                sum(dual(coupling[w][:h2genunit][h])*(vNewH2GenCap[h]-vRetH2GenCap[h] - vNewH2GenCap_val[h] + vRetH2GenCap_val[h]) for h in H_ther) +
                 sum(dual(coupling[w][:h2stocap][s])*hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s]-vRetH2StoCap[s] - vNewH2StoCap_val[s] + vRetH2StoCap_val[s]) for s in Q) +
                 sum(dual(coupling[w][:h2pipe][i])*(vNewH2Pipe[i]-vRetH2Pipe[i] - vNewH2Pipe_val[i] + vRetH2Pipe_val[i]) for i in I) +
-                sum(dual(coupling[w][:h2pipecomp][i])*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - vNewH2PipeCompCap_val[i]) + vRetH2PipeCompCap_val[i] for i in I) +
+                sum(dual(coupling[w][:h2pipecomp][i])*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - vNewH2PipeCompCap_val[i] + vRetH2PipeCompCap_val[i]) for i in I) +
                 sum(dual(coupling[w][:h2stocomp][s])*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - vNewH2StoCompCap_val[s] + vRetH2StoCompCap_val[s]) for s in Q) +
                 dual(coupling[w][:emission])*(vMaxEmissionByWeek[w] - vMaxEmissionByWeek_val[w])
             )
         end
-        
-        optimize!(MP)
-        println("MP status after adding cuts: ", termination_status(MP))
-        @assert termination_status(MP) == MOI.OPTIMAL
-        LB = objective_value(MP)
-        println(" → Updated MP objective (LB) = ", round(LB, digits=2))
-        println(" → Gap = ", round((UB - LB)*100/abs(LB), digits=2),"%")
 
+        optimize!(MP)
+        LB = objective_value(MP)
+        println(" → LB = ", round(LB, digits=2))
+        investment_cost = value.(MP_obj)
+        if (UB - LB)/abs(LB) <= tolerence
+            println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
+            break
+        end
+        
+        # ----------- Regularization (barrier interior solution) -----------
+        alpha = 0.5
+        reg_rhs = LB + alpha * (UB - LB)
+        reg_con = @constraint(MP, MP_obj + sum(theta[w] for w in W) <= reg_rhs)
+        println("Regularization: limiting MP cost <= ", round(reg_rhs, digits=2), " (midpoint between LB and UB) to stabilize solution.")
+        
+        @objective(MP, Min, 0)
+        set_optimizer_attribute(MP, "Method", 2)      # use barrier method
+        set_optimizer_attribute(MP, "Crossover", 0) 
+        optimize!(MP)
+        
+        println(" → Gap = ", round((UB - LB)*100/abs(LB), digits=2))
+        println("MP status in regularized solve: ", termination_status(MP))
+        @assert termination_status(MP) == MOI.OPTIMAL
+
+        
         push!(iters, k)
         push!(LB_hist, LB  / 1e6)   
         push!(UB_hist, UB  / 1e6)
         #push!(gap_hist,(UB - LB) / 1e6)
 
-        # update each curve *without* re-adding legend entries
         if k % 5 == 0 || (UB - LB)/abs(LB + eps()) <= tolerence
             # update curves without legends
             plot!(plt, iters, LB_hist, color=:blue, label=false)
@@ -615,11 +647,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
                     "rel gap = $(round((UB-LB)/abs(LB + eps())*100, digits=3))%")
         end
         
-        if (UB - LB)/abs(LB) <= tolerence
-            println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
-            break
-        end
-        
+        # (We do NOT re-solve MP here; we carry this interior solution forward to subproblems in the next iteration.)
         for w in W
             m = SP_models[w]
             # collect *all* the ConstraintRefs you stored in coupling[w]
@@ -651,6 +679,9 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
 
     end
     
+    println(sum(objective_value(SP_models[w]) for w in W) )
+
+
     println("Done: Iterations = $k, final gap = ", round(UB - LB, digits=4))
     if UB - LB <= tolerence
         println("Optimal objective = ", round(UB, digits=2))

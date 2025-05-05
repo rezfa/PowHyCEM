@@ -104,9 +104,8 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 @variable(CEM, vNewPowGenCap[g in G]>=0, Int)
 @variable(CEM, vRetPowGenCap[g in G]>=0, Int)
 @variable(CEM, vPowGen[g in G, w in W, t in T]>=0)
-@variable(CEM, vPowGenFirst[g in G, w in W]>=0)
 @variable(CEM, vPowGenOnline[g in G_ther, w in W, t in T]>=0)
-@variable(CEM, vPowGenOnlineFirst[g in G_ther, w in W]>=0)
+
 @variable(CEM, vPowGenStart[g in G_ther, w in W, t in T]>=0)
 @variable(CEM, vPowGenShut[g in G_ther, w in W, t in T]>=0)
 @variable(CEM, vPowResUp[g in G_ther, w in W, t in T]>=0)
@@ -118,7 +117,7 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 @variable(CEM, vPowStoCha[s in S, w in W, t in T]>=0)
 @variable(CEM, vPowStoDis[s in S, w in W, t in T]>=0)
 @variable(CEM, vPowSOC[s in S, w in W, t in T]>=0)
-@variable(CEM, vPowSOCFirst[s in S, w in W]>=0)
+
 
 # Power Transmission DV #
 @variable(CEM, vNewPowTraCap[l in L]>=0)
@@ -132,11 +131,11 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 @variable(CEM, vNewH2GenCap[h in H]>=0, Int)
 @variable(CEM, vRetH2GenCap[h in H]>=0, Int)
 @variable(CEM, vH2Gen[h in H, w in W, t in T]>=0)
-@variable(CEM, vH2GenFirst[h in H, w in W]>=0)
+
 @variable(CEM, vH2GenStart[h in H_ther,  w in W, t in T]>=0)
 @variable(CEM, vH2GenShut[h in H_ther,  w in W, t in T]>=0)
 @variable(CEM, vH2GenOnline[h in H_ther,  w in W, t in T]>=0)
-@variable(CEM, vH2GenOnlineFirst[h in H_ther, w in W]>=0)
+
 
 # HSC Storage DV
 @variable(CEM, vNewH2StoCap[s in Q]>=0, Int)
@@ -146,14 +145,17 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 @variable(CEM, vH2StoCha[s in Q, w in W, t in T]>=0)
 @variable(CEM, vH2StoDis[s in Q, w in W, t in T]>=0)
 @variable(CEM, vH2StoSOC[s in Q, w in W, t in T]>=0)
-@variable(CEM, vH2StoSOCFirst[s in Q, w in W]>=0)
+
 
 # HSC Transmission DV
 @variable(CEM, vNewH2Pipe[i in I]>=0, Int)
 @variable(CEM, vRetH2Pipe[i in I]>=0, Int)
 @variable(CEM, vNewH2PipeCompCap[i in I]>=0, Int)
 @variable(CEM, vRetH2PipeCompCap[i in I]>=0, Int)
-@variable(CEM, vH2Flow[i in I, w in W, t in T])
+@variable(CEM, vH2PipeWth[i in I, z in Z, w in W, t in T]>=0)
+@variable(CEM, vH2PipeInj[i in I, z in Z, w in W, t in T]>=0)
+@variable(CEM, vH2PipeSOC[i in I, w in W, t in T]>=0)
+
 
 # Policy Variables
 @variable(CEM, vH2NSD[z in Z,  w in W, t in T]>=0)
@@ -200,7 +202,6 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 # HSC Generation Expressions
 @expression(CEM, eTotH2GenCap[h in H], hsc_gen[h, :existing_cap_tonne_p_hr] .+ hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h] .- vRetH2GenCap[h]))
 @expression(CEM, eTotH2GenUnit[h in H_ther], hsc_gen[h, :num_units]+vNewH2GenCap[h]-vRetH2GenCap[h])
-#@expression(CEM, eRepH2GenCap[h in H_ther], hsc_gen[h, :existing_cap_tonne_p_hr]/hsc_gen[h, :num_units])
 @expression(CEM, eH2GenEvap[h in H, w in W, t in T], hsc_gen[h, :boil_off]*vH2Gen[h,w,t])
 #@expression(CEM, eH2GenEmiByZone[z in Z], sum(CO2_content[hsc_gen[h, :fuel]] * hsc_gen[h,:heat_rate_mmbtu_p_tonne]*vH2Gen[h,w,t]*(1-hsc_gen[h,:ccs_rate])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H_ther, w in W,t in T))
 @expression(CEM, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
@@ -212,8 +213,6 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 
 # HSC Tramsmission Expression
 @expression(CEM, eTotH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + vNewH2Pipe[i] - vRetH2Pipe[i])
-@expression(CEM, eNet_H2_Flow[z in Z,w in W, t in T], sum(H2_Network[i,z] * vH2Flow[i,w,t] *(-1) for i in I))
-@expression(CEM, eH2_Loss_By_Zone[z in Z, w in W, t in T], sum(abs(H2_Network[i,z]) * (1/2) *vH2Flow[i,w,t] * hsc_pipelines[i, :pipe_loss_coeff] for i in I ))
 @expression(CEM, eTotH2PipeCompCap[i in I], hsc_pipelines[i, :existing_comp_cap_tonne_hr] + vNewH2PipeCompCap[i] - vRetH2PipeCompCap[i])
 @expression(CEM, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :land_use_km2_p_length]*hsc_pipelines[i, :distance]*hsc_pipelines[i, :land_use_km2_p_length]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
 
@@ -236,7 +235,7 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 
 @expression(CEM, eCostH2StoVar, sum(hsc_gen[s, :var_om_cost_charge_p_tonne]*vH2StoCha[s,w,t] for s in Q, w in W, t in T))
 @expression(CEM, eCostH2GenStart, sum(hsc_gen[h, :startup_cost_p_tonne_hr] .* hsc_gen[h, :rep_capacity] .* vH2GenStart[h,w,t] for h in H_ther, w in W, t in T)) 
-
+@expression(CEM, eCostH2PipeVar, sum(hsc_pipelines[i, :vom_comp_inj]*vH2PipeInj[i,z,w,t] + hsc_pipelines[i, :vom_pipe_soc]*vH2PipeSOC[i,w,t]  for i in I, z in Z, w in W, t in T))
 @expression(CEM, eCostH2NSD, sum(vH2NSD[z,w,t] .* zones[z, :voll_hsc] for z in Z, w in W,t in T))
 
 # Cost Expressions power sector
@@ -256,14 +255,14 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 #Power and H2 Demads
 @expression(CEM, ePowDemandHSC[w in W, t in T, z in Z], sum(hsc_gen[h, :pow_demand_mwh_p_tonne]*vH2Gen[h,w,t]*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) + 
                                                 sum(hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,w,t]*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) +
-                                                sum(hsc_pipelines[i, :comp_pow_mwh_per_tonne]*vH2Flow[i,w,t]*(H2_Network[i,z]==1 ? 1 : 0) for i in I)
+                                                sum(hsc_pipelines[i, :comp_pow_mwh_per_tonne]*vH2PipeInj[i,z,w,t]*(H2_Network[i,z]==1 ? 1 : 0) for i in I)
 )
 @expression(CEM, eH2DemandPow[w in W, t in T, z in Z], sum(pow_gen[g, :h2_demand_tonne_p_mwh]*vPowGen[g,w,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G))
 @expression(CEM, pow_D[w in W, t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[w,t,z])
 @expression(CEM, H2_D[w in W, t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[w,t,z])
 
-@expression(CEM, eEmissionByWeek[z in Z,w in W], sum(vPowGen[g,w,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G, t in T) + 
-                                                  sum(vH2Gen[h,w,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H, t in T)
+@expression(CEM, eEmissionByWeek[z in Z,w in W], sum(vPowGen[g,w,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]]*(1-pow_gen[g,:ccs_rate])*(pow_gen[g,:zone]==z ? 1 : 0) for g in G, t in T) + 
+                                                sum(CO2_content[hsc_gen[h, :fuel]] * hsc_gen[h,:heat_rate_mmbtu_p_tonne]*vH2Gen[h,w,t]*(1-hsc_gen[h,:ccs_rate])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H, t in T)
 )
 
 @expression(CEM, ePowResReqUp[z in Z, w in W, t in T], 0.1 * eTotPowGenCapByZone[z] .+ 0.05 * pow_D[w,t,z])
@@ -273,7 +272,7 @@ set_optimizer_attribute(CEM,"MIPGap",1e-3)
 @expression(CEM, eEmissionCost, sum(vExtraEmmisionByWeek[z,w]*zones[z,:emission_cost] for z in Z, w in W))
 
 obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ eCostPowStoVar .+ eCostPowNSD .+ eCostPowGenStart).+ 
-      (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2StoVar.+ eCostH2NSD .+ eCostH2GenStart) .+ eEmissionCost
+      (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2StoVar.+ eCostH2PipeVar .+ eCostH2NSD .+ eCostH2GenStart) .+ eEmissionCost
 
 @objective(CEM, Min, obj) # The objective is linear exept the start cost of thermal generators which is integer
 
@@ -309,23 +308,22 @@ end
 @constraint(CEM, cPowShutLimits[g in G_ther,w in W,t in T], vPowGenShut[g,w,t] .- vPowGenOnline[g,w,t]<= 0)
 #Cyclic constraint on Thermal power units
 @constraint(CEM, cPowUnitOnlineCon[g in G_ther, w in W, t in 2:length(T)], vPowGenOnline[g,w,t] - vPowGenOnline[g,w,t-1] == vPowGenStart[g,w,t]-vPowGenShut[g,w,t])
-@constraint(CEM, cPowUnitOnlineFirst[g in G_ther, w in W], vPowGenOnline[g,w,1] - vPowGenOnlineFirst[g,w] == vPowGenStart[g,w,1]-vPowGenShut[g,w,1])
-@constraint(CEM, cPowUnitOnlineCycle[g in G_ther, w in W], vPowGenOnlineFirst[g,w] == vPowGenOnline[g,w,168])
+@constraint(CEM, cPowUnitOnlineFirst[g in G_ther, w in 2:length(W)], vPowGenOnline[g,w,1] - vPowGenOnline[g,w-1,168] == vPowGenStart[g,w,1]-vPowGenShut[g,w,1])
+
 
 #Ramping of non-thermal units 
 @constraint(CEM, cPowGenRampUp[g in G_ren, w in W, t in 2:length(T)], vPowGen[g,w,t]-vPowGen[g,w,t-1] .- pow_gen[g, :ramp_up] * eTotPowGenCap[g]<= 0) 
-@constraint(CEM, cPowGenRampUpFirst[g in G_ren, w in W], vPowGen[g,w,1]-vPowGenFirst[g,w] .- pow_gen[g, :ramp_up]*eTotPowGenCap[g]<=0)
+@constraint(CEM, cPowGenRampUpFirst[g in G_ren, w in 2:length(W)], vPowGen[g,w,1]-vPowGen[g,w-1,168] .- pow_gen[g, :ramp_up]*eTotPowGenCap[g]<=0)
 @constraint(CEM, cPowGenRampDn[g in G_ren, w in W, t in 2:length(T)], vPowGen[g,w,t-1]-vPowGen[g,w,t] .- pow_gen[g, :ramp_dn] * eTotPowGenCap[g]<= 0)
-@constraint(CEM, cPowGenRampDnFirst[g in G_ren, w in W], vPowGenFirst[g,w]-vPowGen[g,w,1] .- pow_gen[g, :ramp_dn] * eTotPowGenCap[g]<= 0)
-@constraint(CEM, cPowGenCycle[g in G_ren, w in W], vPowGenFirst[g,w] == vPowGen[g,w,168])
+@constraint(CEM, cPowGenRampDnFirst[g in G_ren, w in 2:length(W)], vPowGen[g,w-1,168]-vPowGen[g,w,1] .- pow_gen[g, :ramp_dn] * eTotPowGenCap[g]<= 0)
 
 #Ramping of Thermal units
 @constraint(CEM, cTherPowGenRampDn[g in G_ther, w in W, t in 2:length(T)], 
             vPowGen[g,w,t-1] .- vPowGen[g,w,t] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_dn] *(vPowGenOnline[g,w,t].-vPowGenStart[g,w,t])
             .+ pow_gen[g, :rep_capacity]*vPowGenStart[g,w,t]*pow_gen[g,:min_op_level] .- vPowGenShut[g,w,t]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][t], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_dn]))<=0
 )
-@constraint(CEM, cTherPowGenRampDnFirst[g in G_ther, w in W], 
-            vPowGenFirst[g,w] .- vPowGen[g,w,1] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_dn] *(vPowGenOnline[g,w,1].-vPowGenStart[g,w,1])
+@constraint(CEM, cTherPowGenRampDnFirst[g in G_ther, w in 2:length(W)], 
+            vPowGen[g,w-1,168] .- vPowGen[g,w,1] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_dn] *(vPowGenOnline[g,w,1].-vPowGenStart[g,w,1])
             .+ pow_gen[g, :rep_capacity]*vPowGenStart[g,w,1]*pow_gen[g,:min_op_level] .- vPowGenShut[g,w,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][1], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_dn]))<=0
 )
 
@@ -334,8 +332,8 @@ end
             .+ pow_gen[g, :rep_capacity]*vPowGenShut[g,w,t]*pow_gen[g,:min_op_level] .- vPowGenStart[g,w,t]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][t], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_up]))<=0
 )
 
-@constraint(CEM, cTherPowGenRampUpFirst[g in G_ther, w in W], 
-            vPowGen[g,w,1] .- vPowGenFirst[g,w] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_up] *(vPowGenOnline[g,w,1].-vPowGenStart[g,w,1])
+@constraint(CEM, cTherPowGenRampUpFirst[g in G_ther, w in  2:length(W)], 
+            vPowGen[g,w,1] .- vPowGen[g,w-1,168] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_up] *(vPowGenOnline[g,w,1].-vPowGenStart[g,w,1])
             .- pow_gen[g, :rep_capacity]*vPowGenShut[g,w,1]*pow_gen[g,:min_op_level] .+ vPowGenStart[g,w,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][1], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_up]))<=0
 )
 
@@ -361,11 +359,11 @@ for s in S
 end
 @constraint(CEM, cPowStoTotCapMin[s in S], pow_gen[s, :min_cap_mwh] .-  eTotPowStoCap[s] <=0)
 @constraint(CEM, cPowStoBalance[s in S, w in W, t in 2:length(T)], vPowSOC[s,w,t] == (1-pow_gen[s,:etta_self_dis])*vPowSOC[s,w,t-1] + pow_gen[s,:etta_cha]*vPowStoCha[s,w,t] - (1/pow_gen[s,:etta_dis])*vPowStoDis[s,w,t])
-@constraint(CEM, cPowStoBalanceFirst[s in S, w in W], vPowSOC[s,w,1] == (1-pow_gen[s,:etta_self_dis])*vPowSOCFirst[s,w] + pow_gen[s,:etta_cha]*vPowStoCha[s,w,1] - (1/pow_gen[s,:etta_dis])*vPowStoDis[s,w,1])
+@constraint(CEM, cPowStoBalanceFirst[s in S, w in 2:length(W)], vPowSOC[s,w,1] == (1-pow_gen[s,:etta_self_dis])*vPowSOC[s,w-1,168] + pow_gen[s,:etta_cha]*vPowStoCha[s,w,1] - (1/pow_gen[s,:etta_dis])*vPowStoDis[s,w,1])
 @constraint(CEM, cPowStoMaxDis[s in S, w in W, t in 2:length(T)], vPowStoDis[s,w,t] <= pow_gen[s,:etta_dis]*vPowSOC[s,w,t-1])
-@constraint(CEM, cPowStoMaxDisFirst[s in S, w in W], vPowStoDis[s,w,1] <= pow_gen[s,:etta_dis]*vPowSOCFirst[s,w])
+@constraint(CEM, cPowStoMaxDisFirst[s in S, w in 2:length(W)], vPowStoDis[s,w,1] <= pow_gen[s,:etta_dis]*vPowSOC[s,w-1,168])
 @constraint(CEM, cPowStoMaxCha[s in S, w in W, t in T], vPowStoCha[s,w,t] .- eTotPowStoCap[s]<=0)
-@constraint(CEM, cPowSOCCycle[s in S, w in W], vPowSOCFirst[s,w] == vPowSOC[s,w,168])
+
 
 # Power Transmission #
 @constraints(CEM, begin
@@ -385,7 +383,7 @@ end
 
 # H2 Balance constraint
 @constraint(CEM, cH2Balance[z in Z, w in W, t in T],
-  sum((vH2Gen[h,w,t] .- eH2GenEvap[h,w,t])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) .- sum(H2_Network[i,z]*vH2Flow[i,w,t] for i in I) .- 0.5*sum(abs(H2_Network[i,z])*vH2Flow[i,w,t]*hsc_pipelines[i, :pipe_loss_coeff] for i in I) .+
+  sum((vH2Gen[h,w,t] .- eH2GenEvap[h,w,t])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) .+ sum(vH2PipeWth[i,z,w,t] for i in I) .- sum(vH2PipeInj[i,z,w,t] for i in I) .+
   sum((vH2StoDis[s,w,t] - vH2StoCha[s,w,t])*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q) + vH2NSD[z,w,t] .- vH2Crt[z,w,t]== H2_D[w,t,z]
 )
 
@@ -408,8 +406,8 @@ end
 @constraint(CEM, cH2ShutLimits[h in H_ther, w in W, t in T], vH2GenShut[h,w,t] <= vH2GenOnline[h,w,t])
 
 @constraint(CEM, cH2UnitOnlineCon[h in H_ther, w in W, t in 2:length(T)], vH2GenOnline[h,w,t] - vH2GenOnline[h,w,t-1] == vH2GenStart[h,w,t]-vH2GenShut[h,w,t])
-@constraint(CEM, cH2UnitOnlineConFirst[h in H_ther, w in W], vH2GenOnline[h,w,1] - vH2GenOnlineFirst[h,w] == vH2GenStart[h,w,1]-vH2GenShut[h,w,1])
-@constraint(CEM, cH2GenOnlineConCycle[h in H_ther, w in W], vH2GenOnlineFirst[h,w] == vH2GenOnline[h,w,168])
+@constraint(CEM, cH2UnitOnlineConFirst[h in H_ther, w in 2:length(W)], vH2GenOnline[h,w,1] - vH2GenOnline[h,w-1,168] == vH2GenStart[h,w,1]-vH2GenShut[h,w,1])
+
 
 # Min Up and Down time for Thermal H2 generators
 @constraint(CEM, cMinUpTimeH2Gen[h in H_ther, w in W, t in T], sum(vH2GenStart[h,w,tt] for tt in intersect(T, (t - hsc_gen[h, :up_time]):t)) <= vH2GenOnline[h,w,t])
@@ -420,8 +418,8 @@ end
             vH2Gen[h,w,t-1] .- vH2Gen[h,w,t] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,w,t].-vH2GenStart[h,w,t])
             .+ hsc_gen[h, :rep_capacity]*vH2GenStart[h,w,t]*hsc_gen[h,:min_op_level] .- vH2GenShut[h,w,t]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_down_percentage]))<=0
 )
-@constraint(CEM, cTherH2GenRampDnFirst[h in H_ther, w in W], 
-            vH2GenFirst[h,w] .- vH2Gen[h,w,1] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,w,1].-vH2GenStart[h,w,1])
+@constraint(CEM, cTherH2GenRampDnFirst[h in H_ther, w in 2:length(W)], 
+            vH2Gen[h,w-1,168] .- vH2Gen[h,w,1] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,w,1].-vH2GenStart[h,w,1])
             .+ hsc_gen[h, :rep_capacity]*vH2GenStart[h,w,1]*hsc_gen[h,:min_op_level] .- vH2GenShut[h,w,1]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][1], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_down_percentage]))<=0
 )
 
@@ -430,17 +428,17 @@ end
             .+ hsc_gen[h, :rep_capacity]*vH2GenShut[h,w,t]*hsc_gen[h,:min_op_level] .- vH2GenStart[h,w,t]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_up_percentage]))<=0
 )
 
-@constraint(CEM, cTherH2GenRampUpFirst[g in H_ther, w in W], 
-            vH2Gen[g,w,1] .- vH2GenFirst[g,w] .- hsc_gen[g, :rep_capacity]*hsc_gen[g,:ramp_up_percentage] *(vH2GenOnline[g,w,1].-vH2GenStart[g,w,1])
+@constraint(CEM, cTherH2GenRampUpFirst[g in H_ther, w in 2:length(W)], 
+            vH2Gen[g,w,1] .- vH2Gen[g,w-1,168] .- hsc_gen[g, :rep_capacity]*hsc_gen[g,:ramp_up_percentage] *(vH2GenOnline[g,w,1].-vH2GenStart[g,w,1])
             .- hsc_gen[g, :rep_capacity]*vH2GenShut[g,w,1]*hsc_gen[g,:min_op_level] .+ vH2GenStart[g,w,1]*hsc_gen[g, :rep_capacity]*min(hsc_gen_var[H_w[w][1], hsc_gen[g, :resource]],max(hsc_gen[g,:min_op_level],hsc_gen[g,:ramp_up_percentage]))<=0
 )
 
 # Ramp constraints for dispatachable units
 @constraint(CEM, cH2GenRampUp[g in H_dis, w in W, t in 2:length(T)], vH2Gen[g,w,t]-vH2Gen[g,w,t-1] .- hsc_gen[g, :ramp_up_percentage] * eTotH2GenCap[g]<= 0) 
-@constraint(CEM, cH2GenRampUpFirst[g in H_dis, w in W], vH2Gen[g,w,1]-vH2GenFirst[g,w] .- hsc_gen[g, :ramp_up_percentage]*eTotH2GenCap[g]<=0)
+@constraint(CEM, cH2GenRampUpFirst[g in H_dis, w in 2:length(W)], vH2Gen[g,w,1]-vH2Gen[g,w-1,168] .- hsc_gen[g, :ramp_up_percentage]*eTotH2GenCap[g]<=0)
 @constraint(CEM, cH2GenRampDn[g in H_dis, w in W, t in 2:length(T)], vH2Gen[g,w,t-1]-vH2Gen[g,w,t] .- hsc_gen[g, :ramp_down_percentage] * eTotPowGenCap[g]<= 0)
-@constraint(CEM, cH2GenRampDnFirst[g in H_dis, w in W], vH2GenFirst[g,w]-vH2Gen[g,w,1] .- hsc_gen[g, :ramp_down_percentage] * eTotPowGenCap[g]<= 0)
-@constraint(CEM, cH2GenCycle[g in H_dis, w in W], vH2GenFirst[g,w] == vH2Gen[g,w,168])
+@constraint(CEM, cH2GenRampDnFirst[g in H_dis, w in 2:length(W)], vH2Gen[g,w-1,168]-vH2Gen[g,w,1] .- hsc_gen[g, :ramp_down_percentage] * eTotPowGenCap[g]<= 0)
+
 
 # H2 Storage constraint
 @constraint(CEM, cMaxRetH2StoCap[s in Q], vRetH2StoCap[s]*hsc_gen[s, :rep_capacity] <= hsc_gen[s, :existing_cap_tonne])
@@ -451,7 +449,7 @@ for s in Q
 end
 @constraint(CEM, cMinH2StoCap[s in Q], hsc_gen[s, :min_cap_stor_tonne] <= eTotH2StoCap[s])
 @constraint(CEM, cH2StoBalance[s in Q, w in W, t in 2:length(T)], vH2StoSOC[s,w,t] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOC[s,w,t-1] + vH2StoCha[s,w,t]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,w,t])
-@constraint(CEM, cH2StoBalanceFirst[s in Q, w in W], vH2StoSOC[s,w,1] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOCFirst[s,w] + vH2StoCha[s,w,1]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,w,1])
+@constraint(CEM, cH2StoBalanceFirst[s in Q, w in 2:length(W)], vH2StoSOC[s,w,1] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOC[s,w-1,168] + vH2StoCha[s,w,1]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,w,1])
 @constraint(CEM, cMaxH2StoSOC[s in Q, w in W, t in T], vH2StoSOC[s,w,t]<= hsc_gen[s,:h2stor_max_level]*eTotH2StoCap[s])
 @constraint(CEM, cMinH2StoSOC[s in Q, w in W, t in T], hsc_gen[s,:h2stor_min_level]*eTotH2StoCap[s]<= vH2StoSOC[s,w,t])
 @constraint(CEM, cMaxRetH2StorCompCap[s in Q], vRetH2StoCompCap[s] <= hsc_gen[s, :existing_cap_comp_tonne_hr])
@@ -462,16 +460,23 @@ end
 # H2 Transmission constraints
 @constraint(CEM, cMaxH2PipeNum[i in I], eTotH2Pipe[i] <= hsc_pipelines[i, :max_num_pipes])
 @constraint(CEM, cMaxRetH2PipeNum[i in I], vRetH2Pipe[i] <= hsc_pipelines[i, :existing_num_pipes])
-@constraints(CEM, begin 
-                  cMaxH2PipeFlowOut[i in I, w in W, t in T], vH2Flow[i,w,t] <= eTotH2Pipe[i]*hsc_pipelines[i, :max_op_level]
-                  cMaxH2PipeFlowIn[i in I, w in W, t in T], vH2Flow[i,w,t] >= -eTotH2Pipe[i]*hsc_pipelines[i, :max_op_level]
-end)
 
-@constraint(CEM, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
-@constraints(CEM, begin
-                  cMaxH2PipeFlowOutComp[i in I,w in W,t in T], vH2Flow[i,w,t] <= eTotH2PipeCompCap[i]
-                  cMaxH2PipeFlowInComp[i in I, w in W, t in T], vH2Flow[i,w,t] >= -eTotH2PipeCompCap[i]
-end)
+@constraint(CEM, cH2PipeSOC[i in I, w in W, t in 2:length(T)], vH2PipeSOC[i,w,t] == (1-hsc_pipelines[i, :pipe_loss_coeff])*vH2PipeSOC[i,w,t-1] .- sum(vH2PipeWth[i,z,w,t]*H2_Network[i,z] for z in Z) + sum(hsc_pipelines[i,:inj_efficiency]*vH2PipeInj[i,z,w,t]*H2_Network[i,z] for z in Z))
+@constraint(CEM, cH2PipeSOCFirst[i in I, w in 2:length(W)], vH2PipeSOC[i,w,1] == (1-hsc_pipelines[i, :pipe_loss_coeff])*vH2PipeSOC[i,w-1,168] .- sum(vH2PipeWth[i,z,w,1]*H2_Network[i,z] for z in Z) + sum(hsc_pipelines[i,:inj_efficiency]*vH2PipeInj[i,z,w,1]*H2_Network[i,z] for z in Z))
+@constraint(CEM, cMaxH2PipeSOC[i in I, w in W, t in T], vH2PipeSOC[i,w,t] <= hsc_pipelines[i, :max_pipe_cap_tonne]*hsc_pipelines[i,:max_op_level]*eTotH2Pipe[i])
+
+@constraint(CEM, cMaxH2PipeWth[i in I, w in W, t in 2:length(T)], sum(vH2PipeWth[i,z,w,t]*H2_Network[i,z] for z in Z) <= sum(vH2PipeInj[i,z,w,t]*H2_Network[i,z]*hsc_pipelines[i,:inj_efficiency] for z in Z) + vH2PipeSOC[i,w,t-1]*(1-hsc_pipelines[i, :pipe_loss_coeff]))
+@constraint(CEM, cH2PipeWthFirst[i in I, w in 2:length(W)], sum(vH2PipeWth[i,z,w,1]*H2_Network[i,z] for z in Z) <= sum(vH2PipeInj[i,z,w,1]*H2_Network[i,z]*hsc_pipelines[i, :inj_efficiency] for z in Z) + vH2PipeSOC[i,w-1,168]*(1-hsc_pipelines[i, :pipe_loss_coeff]))
+
+@constraint(CEM, cMaxH2PipeInj[i in I, w in W, t in 2:length(T)], 
+            sum(vH2PipeInj[i,z,w,t]*H2_Network[i,z]*hsc_pipelines[i, :inj_efficiency] for z in Z) <= hsc_pipelines[i, :max_pipe_cap_tonne]*hsc_pipelines[i,:max_op_level]*eTotH2Pipe[i] + sum(vH2PipeWth[i,z,w,t]*H2_Network[i,z] for z in Z) - vH2PipeSOC[i,w,t-1]*(1-hsc_pipelines[i, :pipe_loss_coeff])
+)
+@constraint(CEM, cMaxH2PipeInjFirst[i in I, w in 2:length(W)], 
+            sum(vH2PipeInj[i,z,w,1]*H2_Network[i,z]*hsc_pipelines[i, :inj_efficiency] for z in Z) <= hsc_pipelines[i, :max_pipe_cap_tonne]*hsc_pipelines[i,:max_op_level]*eTotH2Pipe[i] + sum(vH2PipeWth[i,z,w,1]*H2_Network[i,z] for z in Z) - vH2PipeSOC[i,w-1,168]*(1-hsc_pipelines[i, :pipe_loss_coeff])
+)
+
+@constraint(CEM, cH2PipeCompCap[i in I, z in Z, w in W, t in T], vH2PipeInj[i,z,w,t] <= eTotH2PipeCompCap[i])
+@constraint(CEM, cMaxH2PipeCompCap[i in I], vRetH2PipeCompCap[i] <= hsc_pipelines[i, :existing_comp_cap_tonne_hr])
 
 # Policy constraints
 
@@ -505,4 +510,8 @@ try
   end
 catch e
   println("Optimization failed: ", e)
+end
+
+for i in I
+  println("H2 Pipe ", i, " capacity: ", value(eTotH2Pipe[i]))
 end
