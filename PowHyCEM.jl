@@ -294,7 +294,7 @@ obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ e
 
 for g in G
   if 0 <= pow_gen[g, :max_cap_mw]
-    @constraint(CEM, cMaxPowGenCap[g in G], eTotPowGenCap[g] <= pow_gen[g, :max_cap_mw])
+    @constraint(CEM, [g in G], eTotPowGenCap[g] <= pow_gen[g, :max_cap_mw])
   end
 end
 
@@ -432,8 +432,8 @@ end
 # Ramp constraints for dispatachable units
 @constraint(CEM, cH2GenRampUp[g in H_dis, w in W, t in 2:length(T)], vH2Gen[g,w,t]-vH2Gen[g,w,t-1] .- hsc_gen[g, :ramp_up_percentage] * eTotH2GenCap[g]<= 0) 
 @constraint(CEM, cH2GenRampUpFirst[g in H_dis, w in 2:length(W)], vH2Gen[g,w,1]-vH2Gen[g,w-1,168] .- hsc_gen[g, :ramp_up_percentage]*eTotH2GenCap[g]<=0)
-@constraint(CEM, cH2GenRampDn[g in H_dis, w in W, t in 2:length(T)], vH2Gen[g,w,t-1]-vH2Gen[g,w,t] .- hsc_gen[g, :ramp_down_percentage] * eTotPowGenCap[g]<= 0)
-@constraint(CEM, cH2GenRampDnFirst[g in H_dis, w in 2:length(W)], vH2Gen[g,w-1,168]-vH2Gen[g,w,1] .- hsc_gen[g, :ramp_down_percentage] * eTotPowGenCap[g]<= 0)
+@constraint(CEM, cH2GenRampDn[g in H_dis, w in W, t in 2:length(T)], vH2Gen[g,w,t-1]-vH2Gen[g,w,t] .- hsc_gen[g, :ramp_down_percentage] * eTotH2GenCap[g]<= 0)
+@constraint(CEM, cH2GenRampDnFirst[g in H_dis, w in 2:length(W)], vH2Gen[g,w-1,168]-vH2Gen[g,w,1] .- hsc_gen[g, :ramp_down_percentage] * eTotH2GenCap[g]<= 0)
 
 # H2 Storage constraint
 @constraint(CEM, cMaxRetH2StoCap[s in Q], vRetH2StoCap[s]*hsc_gen[s, :rep_capacity] <= hsc_gen[s, :existing_cap_tonne])
