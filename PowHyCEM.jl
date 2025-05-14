@@ -86,9 +86,9 @@ H2_Network = hsc_pipelines[1:length(I), col_h:col_h+length(Z)-1]
 #Defining the Model
 CEM = Model(Gurobi.Optimizer)
 #set_optimizer_attribute(CEM, "BarConvTol", 1e-4) 
-set_optimizer_attribute(CEM, "Method", 2)      # use barrier method
-set_optimizer_attribute(CEM, "Crossover", 0)
-set_optimizer_attribute(CEM, "OutputFlag", 1)
+#set_optimizer_attribute(CEM, "Method", 2)      # use barrier method
+#set_optimizer_attribute(CEM, "Crossover", 0)
+#set_optimizer_attribute(CEM, "OutputFlag", 1)
 #set_optimizer_attribute(CEM, "LogToConsole", 1)
 #set_optimizer_attribute(CEM,"MIPGap",1e-3)
 
@@ -339,7 +339,6 @@ end
 #Minimum up/donw time for thermal generators
 @constraint(CEM, cMinUpTimePowGen[g in G_ther,w in W,t in T], sum(vPowGenStart[g,w,tt] for tt in intersect(T, (t - pow_gen[g, :up_time]):t)) <= vPowGenOnline[g,w,t])
 @constraint(CEM, cMinDnTimePowGen[g in G_ther,w in W,t in T], sum(vPowGenShut[g,w,tt] for tt in intersect(T, (t - pow_gen[g, :down_time]):t)) <= eTotPowGenUnit[g] - vPowGenOnline[g,w,t])
-
 #Spinning Reserve Constraints
 @constraint(CEM, cPowResUpMax[g in G_ther, w in W,t in T], vPowResUp[g,w,t] .+ vPowGen[g,w,t] .-  pow_gen[g, :rep_capacity]*pow_gen[g,:max_op_level]*vPowGenOnline[g,w,t] <=0)
 @constraint(CEM, cPowResDnMax[g in G_ther, w in W,t in T], vPowResDn[g,w,t] .+ pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,w,t] .- vPowGen[g,w,t] <= 0) 
@@ -439,7 +438,7 @@ end
 @constraint(CEM, cMaxRetH2StoCap[s in Q], vRetH2StoCap[s]*hsc_gen[s, :rep_capacity] <= hsc_gen[s, :existing_cap_tonne])
 for s in Q
   if 0 <= hsc_gen[s, :max_cap_stor_tonne]
-    @constraint(CEM, [s in S], eTotH2StoCap[s]<= hsc_gen[s, :max_cap_stor_tonne])
+    @constraint(CEM, [s in Q], eTotH2StoCap[s]<= hsc_gen[s, :max_cap_stor_tonne])
   end
 end
 @constraint(CEM, cMinH2StoCap[s in Q], hsc_gen[s, :min_cap_stor_tonne] <= eTotH2StoCap[s])
