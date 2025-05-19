@@ -103,9 +103,11 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     MP = Model(Gurobi.Optimizer)
     set_optimizer_attribute(MP, "Method", 2)      
     set_optimizer_attribute(MP, "Crossover", 0)
-    #set_optimizer_attribute(MP,"MIPGap",1e-2)
     set_optimizer_attribute(MP, "OutputFlag", 0)
     set_optimizer_attribute(MP, "LogToConsole", 0)
+    set_optimizer_attribute(MP,"MIPGap",1e-3)
+    set_optimizer_attribute(MP, "BarConvTol", 1e-3)
+    set_optimizer_attribute(MP, "OptimalityTol", 1e-3)
 
     
     # ---- investment Variables ---- #
@@ -222,11 +224,14 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     
     for w in W
         SP_models[w] = Model(Gurobi.Optimizer)
-        #set_optimizer_attribute(SP_models[w], "Method", 2)      # use barrier method
-        set_optimizer_attribute(SP_models[w], "Crossover", 0)
+        set_optimizer_attribute(SP_models[w], "Threads", 1)
+        set_optimizer_attribute(SP_models[w], "Method", 2)   
+        set_optimizer_attribute(SP_models[w], "Crossover", 1)
         set_optimizer_attribute(SP_models[w], "OutputFlag", 0)
         set_optimizer_attribute(SP_models[w], "LogToConsole", 0)
-        #set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
+        set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
+        set_optimizer_attribute(SP_models[w], "BarConvTol", 1e-3)
+        set_optimizer_attribute(SP_models[w], "OptimalityTol", 1e-3)
     
         # ---- SP Variables ---- #
         # Power Generation DV #
@@ -554,10 +559,6 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         cc[:emission]  = cEmission
 
     end
-
-    const cut_birth = Dict{ConstraintRef, Int}()
-    const cut_refs = ConstraintRef[]
-
     
     for k in 1:max_iter
         
@@ -584,7 +585,6 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         vH2SOCFirst_val         = value.(vH2SOCFirst)
         vH2SOCLast_val          = value.(vH2SOCLast)
 
-
         Threads.@threads for w in W
             optimize!(SP_models[w])
         end
@@ -599,14 +599,6 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
         println(" → Candidate UB   = ", round(UB_candidate, digits=2), " (Best UB = ",    round(UB,           digits=2), ")")
 
-        #for cref in collect(cut_refs)
-        #    if k - cut_birth[cref] > 5
-        #        delete(MP, cref)
-        #        delete!(cut_birth, cref)
-        #        filter!(x->x!=cref, cut_refs)
-        #    end
-        #end
-        # Optimality cuts
         for w in W
             cref = @constraint(MP,
                 theta[w] >= objective_value(SP_models[w]) +
@@ -675,15 +667,12 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
             set_normalized_rhs(coupling[w][:emission], value(vMaxEmissionByWeek[w]))
         end
 
-
-
         push!(iters, k)
         push!(LB_hist, LB  / 1e6)   
         push!(UB_hist, UB  / 1e6)
-        #push!(gap_hist,(UB - LB) / 1e6)
 
         # update each curve *without* re-adding legend entries
-        if k % 5 == 0 || (UB - LB)/abs(LB + eps()) <= tolerence
+        if k % 10 == 0 || (UB - LB)/abs(LB + eps()) <= tolerence
             # update curves without legends
             plot!(plt, iters, LB_hist, color=:blue, label=false)
             plot!(plt, iters, UB_hist, color=:red,  label=false)

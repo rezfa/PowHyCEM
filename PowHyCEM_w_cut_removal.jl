@@ -103,11 +103,9 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     MP = Model(Gurobi.Optimizer)
     set_optimizer_attribute(MP, "Method", 2)      
     set_optimizer_attribute(MP, "Crossover", 0)
+    #set_optimizer_attribute(MP,"MIPGap",1e-2)
     set_optimizer_attribute(MP, "OutputFlag", 0)
     set_optimizer_attribute(MP, "LogToConsole", 0)
-    set_optimizer_attribute(MP,"MIPGap",1e-3)
-    set_optimizer_attribute(MP, "BarConvTol", 1e-3)
-    set_optimizer_attribute(MP, "OptimalityTol", 1e-3)
 
     
     # ---- investment Variables ---- #
@@ -217,14 +215,12 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     
     for w in W
         SP_models[w] = Model(Gurobi.Optimizer)
-        set_optimizer_attribute(SP_models[w], "Threads", 1)
-        set_optimizer_attribute(SP_models[w], "Method", 2)   
-        set_optimizer_attribute(SP_models[w], "Crossover", 1)
+        #set_optimizer_attribute(SP_models[w], "Threads", 1)
+        #set_optimizer_attribute(SP_models[w], "Method", 2)      # use barrier method
+        set_optimizer_attribute(SP_models[w], "Crossover", 0)
         set_optimizer_attribute(SP_models[w], "OutputFlag", 0)
         set_optimizer_attribute(SP_models[w], "LogToConsole", 0)
-        set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
-        set_optimizer_attribute(SP_models[w], "BarConvTol", 1e-3)
-        set_optimizer_attribute(SP_models[w], "OptimalityTol", 1e-3)
+        #set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
     
         # ---- SP Variables ---- #
         # Power Generation DV #
@@ -472,8 +468,9 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     LB = -Inf
     UB = Inf
     k = 1
-    max_iter = 2000
+    max_iter = 1000
     tolerence = 1e-3
+    slack_tolerence = 1e-4
 
     
     # Solve initial Master Problem to get a starting investment plan
@@ -541,6 +538,9 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
 
     end
 
+    cut_refs = ConstraintRef[]
+    nonbind_count = Dict{ConstraintRef,Int}()
+
     for k in 1:max_iter
         
         println("────────────────────────────────────────")
@@ -564,15 +564,44 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         vRetH2StoCompCap_val     = value.(vRetH2StoCompCap)
         vMaxEmissionByWeek_val   = value.(vMaxEmissionByWeek)
 
+        invest_cost  = value(MP_obj)
+        
+        SLACK_TOL = 1e-1
+        MAX_NONBIND_ITERS = 5
+        old_cut_refs = copy(cut_refs)
+        slack_map = Dict{ConstraintRef, Float64}()
+        for cref in old_cut_refs
+            slack = MOI.get(MP, MOI.ConstraintPrimal(), cref)
+            if slack > SLACK_TOL
+                # non-binding this iteration
+                nonbind_count[cref] = get(nonbind_count, cref, 0) + 1
+            else
+                # reset if it binds
+                nonbind_count[cref] = 0
+            end
+        end
+        empty!(cut_refs)
+        for cref in old_cut_refs
+            if nonbind_count[cref] >= MAX_NONBIND_ITERS
+                delete(MP, cref)              # retire it
+                delete!(nonbind_count, cref)  # forget its counter
+            else
+                push!(cut_refs, cref)     # keep it alive
+            end
+        end
+
+    
+        
         Threads.@threads for w in W
             optimize!(SP_models[w])
         end
+        println(Threads.nthreads())
         for w in W
             @assert termination_status(SP_models[w]) == MOI.OPTIMAL
         end
 
         total_sp_cost = sum(objective_value(SP_models[w]) for w in W) 
-        invest_cost  = value(MP_obj)
+        
         UB_candidate = invest_cost + total_sp_cost
         UB = min(UB, UB_candidate)
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
@@ -580,7 +609,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
 
         # Optimality cuts
         for w in W
-            @constraint(MP,
+            cref = @constraint(MP,
                 theta[w] >= objective_value(SP_models[w]) +
                 sum(dual(coupling[w][:gencap][g])*pow_gen[g, :rep_capacity]*(vNewPowGenCap[g] - vRetPowGenCap[g] - vNewPowGenCap_val[g] + vRetPowGenCap_val[g]) for g in G_ren) +
                 sum(dual(coupling[w][:genunit][g])*(vNewPowGenCap[g] - vRetPowGenCap[g] - vNewPowGenCap_val[g] + vRetPowGenCap_val[g]) for g in G_ther) +
@@ -594,6 +623,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
                 sum(dual(coupling[w][:h2stocomp][s])*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - vNewH2StoCompCap_val[s] + vRetH2StoCompCap_val[s]) for s in Q) +
                 dual(coupling[w][:emission])*(vMaxEmissionByWeek[w] - vMaxEmissionByWeek_val[w])
             )
+            push!(cut_refs, cref)
         end
         
         optimize!(MP)

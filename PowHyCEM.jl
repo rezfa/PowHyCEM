@@ -85,12 +85,13 @@ H2_Network = hsc_pipelines[1:length(I), col_h:col_h+length(Z)-1]
 
 #Defining the Model
 CEM = Model(Gurobi.Optimizer)
-#set_optimizer_attribute(CEM, "BarConvTol", 1e-4) 
-#set_optimizer_attribute(CEM, "Method", 2)      # use barrier method
-#set_optimizer_attribute(CEM, "Crossover", 0)
+set_optimizer_attribute(CEM, "Method", 2)    
+set_optimizer_attribute(CEM, "Crossover", 0)
 #set_optimizer_attribute(CEM, "OutputFlag", 1)
 #set_optimizer_attribute(CEM, "LogToConsole", 1)
-#set_optimizer_attribute(CEM,"MIPGap",1e-3)
+set_optimizer_attribute(CEM,"MIPGap",1e-3)
+set_optimizer_attribute(CEM, "BarConvTol", 1e-3)
+set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 
 ####################################
 #### Defining Decision Variables ###
@@ -154,7 +155,8 @@ CEM = Model(Gurobi.Optimizer)
 @variable(CEM, vPowNSD[z in Z, w in W, t in T]>=0)
 @variable(CEM, vPowCrt[z in Z, w in W, t in T]>=0)
 @variable(CEM, vH2Crt[z in Z, w in W, t in T]>=0)
-@variable(CEM, vExtraEmmisionByWeek[z in Z, w in W]>=0)
+@variable(CEM, vExtraEmmisionByWeek[w in W]>=0)
+@variable(CEM, vMaxEmissionByWeek[w in W]>=0)
 
 ###################
 ### Expressions ###
@@ -260,15 +262,15 @@ CEM = Model(Gurobi.Optimizer)
 @expression(CEM, pow_D[w in W, t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[w,t,z])
 @expression(CEM, H2_D[w in W, t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[w,t,z])
 
-@expression(CEM, eEmissionByWeek[z in Z,w in W], sum(vPowGen[g,w,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G, t in T) + 
-                                                  sum(vH2Gen[h,w,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H, t in T)
+@expression(CEM, eEmissionByWeek[w in W], sum(vPowGen[g,w,t]*pow_gen[g, :heat_rate_mmbtu_per_yr]*CO2_content[pow_gen[g, :fuel]] for g in G, t in T) + 
+                                          sum(vH2Gen[h,w,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H, t in T)
 )
 
 @expression(CEM, ePowResReqUp[z in Z, w in W, t in T], 0.1 * eTotPowGenCapByZone[z])
 @expression(CEM, ePowResReqDn[z in Z, w in W, t in T], 0.05 * eTotPowGenCapByZone[z])
 
 #Defining Objective Function
-@expression(CEM, eEmissionCost, sum(vExtraEmmisionByWeek[z,w]*zones[z,:emission_cost] for z in Z, w in W))
+@expression(CEM, eEmissionCost, sum(vExtraEmmisionByWeek[w]*zones[1,:emission_cost] for w in W))
 
 obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ eCostPowStoVar .+ eCostPowNSD .+ eCostPowCrt .+ eCostPowGenStart).+ 
       (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2StoVar.+ eCostH2NSD .+ eCostH2Crt.+ eCostH2GenStart) .+ eEmissionCost
@@ -473,7 +475,8 @@ end)
 #@constraint(CEM, cH2NSD[z in Z, w in W, t in T], vH2NSD[z,w,t] <= zones[z, :hsc_nsd_share]*H2_D[w, t,z])
 
 #Emission constraint
-@constraint(CEM, cZonalEmissionCapByWeek[z in Z, w in W], eEmissionByWeek[z,w] - vExtraEmmisionByWeek[z,w] <= 0.05*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T))
+@constraint(CEM, cMaxEmission, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for z in Z, w in W, t in T))
+@constraint(CEM, cZonalEmissionCapByWeek[w in W], eEmissionByWeek[w] - vExtraEmmisionByWeek[w] <= vMaxEmissionByWeek[w])
 
 #Land Use Constraint on each zone
 @constraint(CEM, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
