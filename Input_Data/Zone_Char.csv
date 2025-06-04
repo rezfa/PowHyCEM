@@ -1,4 +1,3 @@
-﻿Zones,Pow_NSD_Share,HSC_NSD_Share,Voll_Pow,Voll_HSC,Available_Land,Emission_Cap_Tonne_CO2,Emission_cost,Pow_Curtail_cost,H2_Curtail_cost
-1,0.1,0.1,50000,200000,4000,20000,500,0,20
-2,0.1,0.1,50000,200000,3000,30000,500,0,20
-3,0.1,0.1,50000,200000,2000,40000,500,0,20
+﻿Zones,Zone_name,Zone_code,Pow_NSD_Share,HSC_NSD_Share,Voll_Pow,Voll_HSC,Available_Land,Emission_Cap_Tonne_CO2,Emission_cost,Pow_Curtail_cost,H2_Curtail_cost
+1,Groningen,NL11,0.1,0.1,50000,200000,798.72,20000,500,0,1000
+2,Fryslan,NL12,0.1,0.1,50000,200000,1014.4,30000,500,0,1000
