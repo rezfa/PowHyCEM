@@ -1,7 +1,17 @@
 using JuMP, Gurobi, DataFrames, CSV, Plots
 
+include("Write_Capacity.jl")
+include("Write_Land_use.jl")
+include("Write_NSD.jl")
+include( "Write_Curtailment.jl")
+include("Write_Flows.jl")
+include("Write_Emissions.jl")
+include("Write_Storage_Data.jl")
+include("Write_Generations.jl")
+include("Write_costs.jl")
+include("Write_LCOH.jl")
 
-#function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
+function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
     
     
     datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
@@ -248,7 +258,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @variable(SP_models[w], vPowNSD[z in Z, t in T]>=0)
         @variable(SP_models[w], vPowCrt[z in Z, t in T]>=0)
         @variable(SP_models[w], vH2Crt[z in Z, t in T]>=0)
-        @variable(SP_models[w], vExtraEmissionByZone>=0)
+        @variable(SP_models[w], vExtraEmission>=0)
         # Variables foe availability of generation, storage and transmission
         @variable(SP_models[w], eAvailPowGenCap[g in G]>=0)
         @variable(SP_models[w], eAvailPowGenUnit[g in G_ther]>=0)
@@ -299,6 +309,12 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
             sum(vPowGenStart[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]] for g in G_ther, t in T) +
             sum(vH2GenStart[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H_ther, t in T)
         )
+        @expression(SP_models[w], eEmissionByWeekZone[z in Z],
+            sum(vPowGen[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G, t in T) + 
+            sum(vH2Gen[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H, t in T) +
+            sum(vPowGenStart[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther, t in T) +
+            sum(vH2GenStart[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H_ther, t in T)
+        )
         
         # Power Cost Expressions
         @expression(SP_models[w], eCostPowGenVar, sum((pow_gen[g, :vom_cost_mwh] + pow_gen[g, :heat_rate_mmbtu_per_mwh] .* fuel_costs[pow_gen[g, :fuel]][t]) .* vPowGen[g,t] for g in G, t in T))
@@ -315,7 +331,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         @expression(SP_models[w], eCostPowCrt, sum(vPowCrt[z,t] .* zones[z, :pow_curtail_cost] for z in Z, t in T))
         @expression(SP_models[w], eCostH2Crt, sum(vH2Crt[z,t] .* zones[z, :h2_curtail_cost] for z in Z, t in T))
         #Emission Cost Expression
-        @expression(SP_models[w], eEmissionCost, vExtraEmissionByZone * zones[1, :emission_cost] )
+        @expression(SP_models[w], eEmissionCost, vExtraEmission * zones[1, :emission_cost] )
         
         # ---- SP_models[w] Objective ---- #  
         
@@ -455,7 +471,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
         #@constraint(SP_models[w], cPowNSD[z in Z, t in T], vPowNSD[z,t] .- zones[z, :pow_nsd_share]*pow_D[t,z] <= 0 )
         #@constraint(SP_models[w], cH2NSD[z in Z, t in T], vH2NSD[z,t] .- zones[z, :hsc_nsd_share]*H2_D[w, t,z] <= 0)
         #Emission constraint
-        @constraint(SP_models[w], cEmissionCapByWeek, eEmissionByWeek .- vExtraEmissionByZone .- eMaxEmissionByWeek<= 0)
+        @constraint(SP_models[w], cEmissionCapByWeek, eEmissionByWeek .- vExtraEmission .- eMaxEmissionByWeek<= 0)
     end
 
     local LB, UB
@@ -504,6 +520,7 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     PowFlow_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (l,w,t)
     H2FlowPos_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
     H2FlowNeg_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
+    Emission_Gen_by_Week_Zone = Dict{Tuple{Int,Int},Float64}() # key = (w,z)
     Emission_Gen_by_Week = Dict{Tuple{Int},Float64}() # key = (w)
     Extra_Emission = Dict{Tuple{Int},Float64}() # key = (w)
     Emission_cost = Dict{Tuple{Int},Float64}() # key = (w)
@@ -634,9 +651,6 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
             println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
             for w in W
                 sp = SP_models[w]
-                Emission_Gen_by_Week[w] = value(sp[:eEmissionByWeek])
-                Extra_Emission[w] = value(sp[:vExtraEmission])
-                Emission_cost[w] = value(sp[:eEmissionCost])
                 for z in Z, t in T
                     PowNSD_vals[(z, w, t)] = value(sp[:vPowNSD][z, t])
                     H2NSD_vals[(z, w, t)]  = value(sp[:vH2NSD][z, t])
@@ -717,6 +731,20 @@ using JuMP, Gurobi, DataFrames, CSV, Plots
     end
     @assert termination_status(MP) == MOI.OPTIMAL
 
-#end
+    write_capacity_files()
+    write_line_capacity_files()
+    write_land_use_data()
+    write_nsd_by_zone(PowNSD_vals, H2NSD_vals, Z, W, T)
+    write_curtailment_by_zone(PowCrt_vals, H2Crt_vals, Z, W, T)
+    write_flows(PowFlow_vals, H2FlowPos_vals, H2FlowNeg_vals, pow_lines, hsc_pipelines, L, I, W, T)
+    write_emissions_detail(SP_models, Z, W)
+    write_storage_profiles(pow_gen, hsc_gen, S, Q, PowStoCha_vals, PowStoDis_vals, PowStoSOC_vals, H2StoCha_vals, H2StoDis_vals, H2StoSOC_vals, W, T)
+    write_generation_profiles(pow_gen, hsc_gen, G, H, PowGen_vals, H2Gen_vals, W, T)
+    write_costs_files(SP_models, pow_gen, hsc_gen, G, S, H, Q, PowGen_vals, PowStoCha_vals, H2Gen_vals, H2StoCha_vals, W, T)
+    write_line_costs_power(pow_lines, L)
+    write_h2_pipe_costs(hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
+    write_LCOH(SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
+
+end
 
 run_benders()

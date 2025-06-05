@@ -107,8 +107,6 @@ function write_capacity_files()
     end
 
     CSV.write("02_Capacity_H2.csv", df_h)
-
-    println("✅ Wrote Capacity_Power.csv and Capacity_H2.csv")
 end
 
 function write_line_capacity_files()

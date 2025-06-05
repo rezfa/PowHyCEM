@@ -1,12 +1,19 @@
 using JuMP, Gurobi, DataFrames, CSV, Plots
 
-include("Write_Output_Capacity.jl")
-include("Write_output_Land_use.jl")
+include("Write_Capacity.jl")
+include("Write_Land_use.jl")
 include("Write_NSD.jl")
 include( "Write_Curtailment.jl")
+include("Write_Flows.jl")
+include("Write_Emissions.jl")
+include("Write_Storage_Data.jl")
+include("Write_Generations.jl")
+include("Write_costs.jl")
+include("Write_LCOH.jl")
 
 
-#function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
+
+function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
     
     
     datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
@@ -318,6 +325,12 @@ include( "Write_Curtailment.jl")
             sum(vPowGenStart[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]] for g in G_ther, t in T) +
             sum(vH2GenStart[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H_ther, t in T)
         )
+        @expression(SP_models[w], eEmissionByWeekZone[z in Z],
+            sum(vPowGen[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G, t in T) + 
+            sum(vH2Gen[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H, t in T) +
+            sum(vPowGenStart[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther, t in T) +
+            sum(vH2GenStart[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H_ther, t in T)
+        )
         
         # Power Cost Expressions
         @expression(SP_models[w], eCostPowGenVar, sum((pow_gen[g, :vom_cost_mwh] + pow_gen[g, :heat_rate_mmbtu_per_mwh] .* fuel_costs[pow_gen[g, :fuel]][t]) .* vPowGen[g,t] for g in G, t in T))
@@ -524,6 +537,7 @@ include( "Write_Curtailment.jl")
     PowFlow_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (l,w,t)
     H2FlowPos_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
     H2FlowNeg_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
+    Emission_Gen_by_Week_Zone = Dict{Tuple{Int,Int},Float64}() # key = (w,z)
     Emission_Gen_by_Week = Dict{Tuple{Int},Float64}() # key = (w)
     Extra_Emission = Dict{Tuple{Int},Float64}() # key = (w)
     Emission_cost = Dict{Tuple{Int},Float64}() # key = (w)
@@ -662,9 +676,6 @@ include( "Write_Curtailment.jl")
             println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
             for w in W
                 sp = SP_models[w]
-                Emission_Gen_by_Week[w] = value(sp[:eEmissionByWeek])
-                Extra_Emission[w] = value(sp[:vExtraEmission])
-                Emission_cost[w] = value(sp[:eEmissionCost])
                 for z in Z, t in T
                     PowNSD_vals[(z, w, t)] = value(sp[:vPowNSD][z, t])
                     H2NSD_vals[(z, w, t)]  = value(sp[:vH2NSD][z, t])
@@ -754,88 +765,16 @@ include( "Write_Curtailment.jl")
     write_land_use_data()
     write_nsd_by_zone(PowNSD_vals, H2NSD_vals, Z, W, T)
     write_curtailment_by_zone(PowCrt_vals, H2Crt_vals, Z, W, T)
+    write_flows(PowFlow_vals, H2FlowPos_vals, H2FlowNeg_vals, pow_lines, hsc_pipelines, L, I, W, T)
+    write_emissions_detail(SP_models, Z, W)
+    write_storage_profiles(pow_gen, hsc_gen, S, Q, PowStoCha_vals, PowStoDis_vals, PowStoSOC_vals, H2StoCha_vals, H2StoDis_vals, H2StoSOC_vals, W, T)
+    write_generation_profiles(pow_gen, hsc_gen, G, H, PowGen_vals, H2Gen_vals, W, T)
+    write_costs_files(SP_models, pow_gen, hsc_gen, G, S, H, Q, PowGen_vals, PowStoCha_vals, H2Gen_vals, H2StoCha_vals, W, T)
+    write_line_costs_power(pow_lines, L)
+    write_h2_pipe_costs(hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
+    write_LCOH(SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
 
-
-    df = DataFrame(
-        week              = Int[],
-        gen_emission      = Float64[],
-        extra_emission    = Float64[],
-        total_emission_cost = Float64[]
-    )
-    for w in W
-        # If your keys are literally Tuple{Int} (e.g. key = (w,)), use (w,) as lookup
-        gen_val   = Emission_Gen_by_Week[w]
-        extra_val = Extra_Emission[w]
-        cost_val  = Emission_cost[w]
-        push!(df, (w, gen_val, extra_val, cost_val))
-    end
-    CSV.write("Emissions.csv", df)
-
-    df_powflow = DataFrame(
-      line         = String[],
-      week         = Int[],
-      hour_in_week = Int[],
-      abs_hour     = Int[],
-      flow_mw      = Float64[]
-    )
-    df_h2flow = DataFrame(
-      pipe         = String[],
-      week         = Int[],
-      hour_in_week = Int[],
-      abs_hour     = Int[],
-      flow_tonne   = Float64[]
-    )
-    for w in W, t in T
-      abs_h = (w - 1)*length(T) + t
-      for l in L
-        flow = PowFlow_vals[l, w, t]
-        push!(df_powflow, (string(l), w, t, abs_h, flow))
-      end
-      for i in I
-        netf = H2FlowPos_vals[i, w, t] - H2FlowNeg_vals[i, w, t]
-        push!(df_h2flow, (string(i), w, t, abs_h, netf))
-      end
-    end
-    CSV.write("07_Power_Flows.csv", df_powflow)
-    CSV.write("07_H2_Flows.csv",    df_h2flow)
-
-    df_pow_sto = DataFrame(
-      storage        = String[],
-      week           = Int[],
-      hour_in_week   = Int[],
-      abs_hour       = Int[],
-      charge_mwh     = Float64[],
-      discharge_mwh  = Float64[],
-      soc_mwh        = Float64[]
-    )
-    df_h2_sto = DataFrame(
-      storage         = String[],
-      week            = Int[],
-      hour_in_week    = Int[],
-      abs_hour        = Int[],
-      charge_tonne    = Float64[],
-      discharge_tonne = Float64[],
-      soc_tonne       = Float64[]
-    )
-    for w in W, t in T
-      abs_h = (w - 1)*length(T) + t
-      for s in S
-        cha   = PowStoCha_vals[s, w, t]
-        dis   = PowStoDis_vals[s, w, t]
-        soc   = PowStoSOC_vals[s, w, t]
-        push!(df_pow_sto, (string(s), w, t, abs_h, cha, dis, soc))
-      end
-      for q in Q
-        cha   = H2StoCha_vals[q, w, t]
-        dis   = H2StoDis_vals[q, w, t]
-        soc   = H2StoSOC_vals[q, w, t]
-        push!(df_h2_sto, (string(q), w, t, abs_h, cha, dis, soc))
-      end
-    end
-    CSV.write("08_Power_Storage_Profile.csv", df_pow_sto)
-    CSV.write("08_H2_Storage_Profile.csv",    df_h2_sto)
-
-#end
+end
 
 run_benders()
 
