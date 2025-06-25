@@ -160,15 +160,16 @@ function write_LCOH(
       "Gen_Fuel_Cost",
       "Gen_Start_Cost",
       "Storage_Cost",
-      "Pipeline_Cost"
+      "Pipeline_Cost",
+      "Emission_Cost"
     ]
 
     df = DataFrame(
       Attribute = attrs,
-      Green_H2  = zeros(Float64, 8),
-      Blue_H2   = zeros(Float64, 8),
-      Grey_H2   = zeros(Float64, 8),
-      All       = zeros(Float64, 8)
+      Green_H2  = zeros(Float64, length(attrs)),
+      Blue_H2   = zeros(Float64, length(attrs)),
+      Grey_H2   = zeros(Float64, length(attrs)),
+      All       = zeros(Float64, length(attrs))
     )
 
     df[1, :Green_H2] = gen_tot[:Green]
@@ -204,13 +205,56 @@ function write_LCOH(
     df[7, :All] = storage_cost
     df[8, :All] = pipeline_cost
 
+    em_cost_weeks = Float64[]
+
+    for w in W
+        # 1) H₂ from gen (all numeric)
+        h2_gen = sum(
+          H2Gen_vals[(h,w,t)] *
+            hsc_gen[h, :heat_rate_mmbtu_p_tonne] *
+            CO2_content[hsc_gen[h, :fuel]][1]
+          for h in H, t in T
+        )
+    
+        # 2) H₂ from starts (value(...) turns vH2GenStart into Float64)
+        h2_start = sum(
+          value(SP_models[w][:vH2GenStart][h,t]) *
+            hsc_gen[h, :heat_rate_mmbtu_p_tonne] *
+            CO2_content[hsc_gen[h, :fuel]][1]
+          for h in H_ther, t in T
+        )
+    
+        h2_emi = h2_gen + h2_start         # Float64
+    
+        # 3) total CO₂ that week (value(...) → Float64)
+        tot_emi = value(SP_models[w][:eEmissionByWeek])
+    
+        # 4) fraction due to H₂
+        frac_H2 = tot_emi > 0 ? (h2_emi / tot_emi) : 0.0
+    
+
+    
+        # 6) CO₂ price (if it’s a JuMP var or expr, call value; 
+        #    if it’s a pure constant you can skip value)
+        price   = value(SP_models[w][:eEmissionCost])
+    
+        # 7) allocate and push a pure Float64
+        push!(em_cost_weeks, frac_H2 * price)
+        
+    end
+    
+
+    emission_cost = sum(em_cost_weeks)
+    
+    df[9, :All] = emission_cost    # Emission_Cost row
+
     # Allow missing values in the three category columns plus "All" for the LCOH row
     for col in [:Green_H2, :Blue_H2, :Grey_H2, :All]
         allowmissing!(df, col)
     end
 
     # 8) Compute LCOH = (sum of all cost rows) / (total_generation * 1000)
-    total_cost = sum(df[2:8, :All])
+    total_cost = sum(df[2:9, :All])
     total_gen  = df[1, :All]  # in tonnes
     lcoh       = total_cost / (total_gen * 1000)  # €/kg
 

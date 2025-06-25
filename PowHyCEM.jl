@@ -213,9 +213,9 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 @expression(CEM, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
 
 # HSC Storage Expression
-@expression(CEM, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s] - vRetH2StoCap[s]))
+@expression(CEM, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + (vNewH2StoCap[s] - vRetH2StoCap[s]))
 @expression(CEM, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s]) #rep cap is considered 1
-@expression(CEM, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])*hsc_gen[s, :rep_capacity]* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
+@expression(CEM, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
 
 # HSC Tramsmission Expression
 @expression(CEM, eH2FlowNet[i in I, w in W, t in T], vH2FlowPos[i,w,t] - vH2FlowNeg[i,w,t]) #Net flow of H2 in the network
@@ -228,7 +228,7 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 # HSC Cost Expressions
 @expression(CEM, eCostH2GenInv, sum(hsc_gen[h, :inv_cost_tonne_hr_p_yr]*vNewH2GenCap[h]*hsc_gen[h, :rep_capacity] + hsc_gen[h, :fom_cost_p_tonne_p_hr_yr]*eTotH2GenCap[h] for h in H))
 
-@expression(CEM, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s] 
+@expression(CEM, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s] 
                                   + hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] + hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] for s in Q)
 )
 
@@ -447,7 +447,7 @@ end)
 @constraint(CEM, cH2GenCycle[g in H_dis, w in W], vH2GenFirst[g,w] == vH2Gen[g,w,168])
 
 # H2 Storage constraint
-@constraint(CEM, cMaxRetH2StoCap[s in Q], vRetH2StoCap[s]*hsc_gen[s, :rep_capacity] <= hsc_gen[s, :existing_cap_tonne])
+@constraint(CEM, cMaxRetH2StoCap[s in Q], vRetH2StoCap[s] <= hsc_gen[s, :existing_cap_tonne])
 
 @constraint(CEM, cMaxH2StoCap[s in Q], eTotH2StoCap[s]<= hsc_gen[s, :max_cap_stor_tonne])
 
@@ -483,7 +483,7 @@ end)
 #@constraint(CEM, cH2NSD[z in Z, w in W, t in T], vH2NSD[z,w,t] <= zones[z, :hsc_nsd_share]*H2_D[w, t,z])
 
 #Emission constraint
-@constraint(CEM, cMaxEmission, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for z in Z, w in W, t in T))
+@constraint(CEM, cMaxEmission, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*0.4*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for z in Z, w in W, t in T))
 @constraint(CEM, cZonalEmissionCapByWeek[w in W], eEmissionByWeek[w] - vExtraEmmisionByWeek[w] <= vMaxEmissionByWeek[w])
 
 #Land Use Constraint on each zone

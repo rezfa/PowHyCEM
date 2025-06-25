@@ -11,7 +11,12 @@ include("Write_Generations.jl")
 include("Write_costs.jl")
 include("Write_LCOH.jl")
 
-function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
+LB = -Inf
+UB = Inf
+k = 1
+max_iter = 1000
+tolerence = 1e-3
+
     
     
     datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
@@ -145,13 +150,13 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     @expression(MP, eTotPowGenCap[g in G], pow_gen[g, :existing_cap] .+ pow_gen[g, :rep_capacity]*(vNewPowGenCap[g] .- vRetPowGenCap[g]))
     @expression(MP, eTotPowStoCap[s in S], pow_gen[s, :existing_cap] .+ pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] .- vRetPowStoCap[s]))
     @expression(MP, eTotH2GenCap[h in H], hsc_gen[h, :existing_cap_tonne_p_hr] .+ hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h] .- vRetH2GenCap[h]))
-    @expression(MP, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s] - vRetH2StoCap[s]))
+    @expression(MP, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + (vNewH2StoCap[s] - vRetH2StoCap[s]))
     @expression(MP, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s])
     @expression(MP, eTotH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + vNewH2Pipe[i] - vRetH2Pipe[i])
     @expression(MP, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
     @expression(MP, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
     @expression(MP, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
-    @expression(MP, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])*hsc_gen[s, :rep_capacity]* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
+    @expression(MP, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
     @expression(MP, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :land_use_km2_p_length]*hsc_pipelines[i, :distance]*hsc_pipelines[i, :land_use_km2_p_length]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
     @expression(MP, eTotH2PipeCompCap[i in I], hsc_pipelines[i, :existing_comp_cap_tonne_hr] + vNewH2PipeCompCap[i] - vRetH2PipeCompCap[i])
     #Cost Expressions
@@ -161,7 +166,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     ) 
     @expression(MP, eCostPowTraInv, sum(pow_lines[l, :line_reinforcement_cost_per_mwyr] .* vNewPowTraCap[l] for l in L))
     @expression(MP, eCostH2GenInv, sum(hsc_gen[h, :inv_cost_tonne_hr_p_yr]*vNewH2GenCap[h]*hsc_gen[h, :rep_capacity] + hsc_gen[h, :fom_cost_p_tonne_p_hr_yr]*eTotH2GenCap[h] for h in H))
-    @expression(MP, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s]*hsc_gen[s, :rep_capacity] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s] +
+    @expression(MP, eCostH2StoInv, sum(hsc_gen[s, :inv_cost_tonne_p_yr]*vNewH2StoCap[s] + hsc_gen[s, :inv_cost_comp_tonne_hr_p_yr]*vNewH2StoCompCap[s] +
                                      hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] + hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] for s in Q)
     )
     @expression(MP, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
@@ -187,7 +192,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     @constraint(MP, cMaxH2GenCap[h in H], eTotH2GenCap[h]<= hsc_gen[h, :max_cap_tonne_p_hr])
 
     @constraint(MP, cMinH2GenCap[h in H], hsc_gen[h, :min_cap_tonne_p_hr] <= eTotH2GenCap[h])
-    @constraint(MP, cMaxRetH2StoCap[s in Q], vRetH2StoCap[s]*hsc_gen[s, :rep_capacity] <= hsc_gen[s, :existing_cap_tonne])
+    @constraint(MP, cMaxRetH2StoCap[s in Q], vRetH2StoCap[s]<= hsc_gen[s, :existing_cap_tonne])
     
     @constraint(MP, cMaxH2StoCap[s in Q], eTotH2StoCap[s]<= hsc_gen[s, :max_cap_stor_tonne])
 
@@ -202,7 +207,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     #Land Use Constraint on each zone
     @constraint(MP, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
     #Policy
-    @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
+    @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*0.4*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
     
 
     # Defining the Sub Problem
@@ -456,6 +461,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         @constraint(SP_models[w], cH2StoCycle[s in Q], vH2StoSOCFirst[s] == vH2StoSOC[s,168])
         @constraint(SP_models[w], cMaxH2StoSOC[s in Q, t in T], vH2StoSOC[s,t] .- hsc_gen[s,:h2stor_max_level]*eAvailH2StoCap[s]<= 0)
         @constraint(SP_models[w], cMinH2StoSOC[s in Q, t in T], hsc_gen[s,:h2stor_min_level]*eAvailH2StoCap[s] .- vH2StoSOC[s,t]<= 0 )
+        @constraint(SP_models[w], cMaxH2StoDis[s in Q, t in 2:length(T)], vH2StoDis[s,t] .- hsc_gen[s,:etta_dis]*vH2StoSOC[s,t-1]<= 0)
         @constraint(SP_models[w], cMaxH2StoChar[s in Q,t in T], vH2StoCha[s,t] .- eAvailH2StoCompCap[s] <= 0)
         
         # H2 Transmission constraints
@@ -473,13 +479,6 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         #Emission constraint
         @constraint(SP_models[w], cEmissionCapByWeek, eEmissionByWeek .- vExtraEmission .- eMaxEmissionByWeek<= 0)
     end
-
-    local LB, UB
-    LB = -Inf
-    UB = Inf
-    k = 1
-    max_iter = 2000
-    tolerence = 1e-3
 
     
     # Solve initial Master Problem to get a starting investment plan
@@ -520,10 +519,6 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     PowFlow_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (l,w,t)
     H2FlowPos_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
     H2FlowNeg_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
-    Emission_Gen_by_Week_Zone = Dict{Tuple{Int,Int},Float64}() # key = (w,z)
-    Emission_Gen_by_Week = Dict{Tuple{Int},Float64}() # key = (w)
-    Extra_Emission = Dict{Tuple{Int},Float64}() # key = (w)
-    Emission_cost = Dict{Tuple{Int},Float64}() # key = (w)
 
     for w in W
         cc = coupling[w]
@@ -600,7 +595,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         total_sp_cost = sum(objective_value(SP_models[w]) for w in W) 
         invest_cost  = value(MP_obj)
         UB_candidate = invest_cost + total_sp_cost
-        UB = min(UB, UB_candidate)
+        global UB = min(UB, UB_candidate)
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
         println(" → Candidate UB   = ", round(UB_candidate, digits=2), " (Best UB = ",    round(UB,           digits=2), ")")
 
@@ -614,7 +609,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
                 sum(dual(coupling[w][:tracap][l])*(vNewPowTraCap[l] - vNewPowTraCap_val[l]) for l in L) +
                 sum(dual(coupling[w][:h2gen][h])*hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h]-vRetH2GenCap[h] - vNewH2GenCap_val[h] + vRetH2GenCap_val[h]) for h in H_dis) +
                 sum(dual(coupling[w][:h2genunit][h])*(vNewH2GenCap[h]-vRetH2GenCap[h] - vNewH2GenCap_val[h] + vRetH2GenCap_val[h]) for h in H_ther) +
-                sum(dual(coupling[w][:h2stocap][s])*hsc_gen[s, :rep_capacity]*(vNewH2StoCap[s]-vRetH2StoCap[s] - vNewH2StoCap_val[s] + vRetH2StoCap_val[s]) for s in Q) +
+                sum(dual(coupling[w][:h2stocap][s])*(vNewH2StoCap[s]-vRetH2StoCap[s] - vNewH2StoCap_val[s] + vRetH2StoCap_val[s]) for s in Q) +
                 sum(dual(coupling[w][:h2pipe][i])*(vNewH2Pipe[i]-vRetH2Pipe[i] - vNewH2Pipe_val[i] + vRetH2Pipe_val[i]) for i in I) +
                 sum(dual(coupling[w][:h2pipecomp][i])*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - vNewH2PipeCompCap_val[i] + vRetH2PipeCompCap_val[i]) for i in I) +
                 sum(dual(coupling[w][:h2stocomp][s])*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - vNewH2StoCompCap_val[s] + vRetH2StoCompCap_val[s]) for s in Q) +
@@ -625,7 +620,7 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
         optimize!(MP)
         println("MP status after adding cuts: ", termination_status(MP))
         @assert termination_status(MP) == MOI.OPTIMAL
-        LB = objective_value(MP)
+        global LB = objective_value(MP)
         println(" → Updated MP objective (LB) = ", round(LB, digits=2))
         println(" → Gap = ", round((UB - LB)*100/abs(LB), digits=2),"%")
 
@@ -745,6 +740,3 @@ function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding
     write_h2_pipe_costs(hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
     write_LCOH(SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
 
-end
-
-run_benders()

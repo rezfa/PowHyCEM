@@ -1,15 +1,1 @@
-﻿HSC_Pipelines,Pipe_Path,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,Existing_Num_Pipes,Max_num_pipes,Max_pipe_cap_tonne,existing_comp_cap_tonne_hr,Investment_cost_per_length,Compressor_Inv_per_Length,FOM_per_length,FOM_Comp_p_tonne_hr,VOM_per_tonne,Pipe_loss_coeff,Distance,Min_op_level,Max_op_level,Comp_pow_MWh_per_tonne,Land_use_km2_p_length
-1,Groningen_to_Drenthe,-1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,20,390,0,30900,0,36600,0,13.915,0.000008,60.5,0.3,1,0.556,0
-2,Drenthe_to_Overijssel,0,0,-1,1,0,0,0,0,0,0,0,0,0,0,0,20,390,0,30900,0,36600,0,10.281,0.000008,44.7,0.3,1,0.556,0
-3,Overijssel_to_Gelderland,0,0,0,-1,0,1,0,0,0,0,0,0,0,0,0,20,390,0,30900,0,36600,0,10.925,0.000008,47.5,0.3,1,0.556,0
-4,Gelderland_to_NoordBrabant,0,0,0,0,0,-1,0,0,0,0,1,0,0,0,0,20,390,0,30900,0,36600,0,13.57,0.000008,59,0.3,1,0.556,0
-5,NoordBrabant_to_Limburg,0,0,0,0,0,0,0,0,0,0,-1,1,0,0,0,20,390,0,30900,0,36600,0,20.93,0.000008,91,0.3,1,0.556,0
-6,NoordBrabant_to_ZuidHolland,0,0,0,0,0,0,0,0,1,0,-1,0,0,0,0,20,390,0,30900,0,36600,0,22.08,0.000008,96,0.3,1,0.556,0
-7,ZuidHolland_to_NoordHolland,0,0,0,0,0,0,0,1,-1,0,0,0,0,0,0,20,390,0,30900,0,36600,0,24.15,0.000008,105,0.3,1,0.556,0
-8,NoordBrabant_to_Zeeland,0,0,0,0,0,0,0,0,0,1,-1,0,0,0,0,20,390,0,30900,0,36600,0,28.796,0.000008,125.2,0.3,1,0.556,0
-9,Groningen_to_Fryslan,-1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,20,390,0,165000,21000,36600,0,17.825,0.000008,77.5,0.3,1,0.556,0.015
-10,Fryslan_to_NoordHolland,0,-1,0,0,0,0,0,1,0,0,0,0,0,0,0,20,390,0,165000,21000,36600,0,15.295,0.000008,66.5,0.3,1,0.556,0.015
-11,offshore_north_to_Groningen,1,0,0,0,0,0,0,0,0,0,0,0,-1,0,0,20,390,0,165000,21000,36600,0,42.55,0.000008,185,0.3,1,0.556,0.015
-12,offshore_north_offshore_west,0,0,0,0,0,0,0,0,0,0,0,0,-1,1,0,20,390,0,165000,21000,36600,0,19.826,0.000008,86.2,0.3,1,0.556,0.015
-13,offshore_west_to_NoordHolland,0,0,0,0,0,0,0,1,0,0,0,0,0,-1,0,20,390,0,165000,21000,36600,0,15.64,0.000008,68,0.3,1,0.556,0.015
-14,offshore_west_to_ZuidHolland,0,0,0,0,0,0,0,0,1,0,0,0,0,-1,0,20,390,0,165000,21000,36600,0,26.45,0.000008,115,0.3,1,0.556,0.015
+﻿HSC_Pipelines,Pipe_Path,z1,z2,Existing_Num_Pipes,Max_num_pipes,Max_pipe_cap_tonne,existing_comp_cap_tonne_hr,Investment_cost_per_length,Compressor_Inv_per_Length,FOM_per_length,FOM_Comp_p_tonne_hr,VOM_per_tonne,Pipe_loss_coeff,Distance,Min_op_level,Max_op_level,Comp_pow_MWh_per_tonne,Land_use_km2_p_length
