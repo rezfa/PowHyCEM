@@ -1,9 +1,9 @@
-function write_emissions_detail(
+function write_emissions_detail(datadir,
     SP_models::AbstractVector{<:Model},
     Z::AbstractVector{<:Integer},
     W::AbstractVector{<:Integer}
     )
-
+    results_dir = joinpath(datadir, "Results")
     nW = length(W)
     week_labels = Vector{String}(undef, nW + 1)
     week_labels[1] = "Sum"
@@ -64,6 +64,6 @@ function write_emissions_detail(
     df[!, :Emission_Cost]   = cost_em_col
 
     # 5) Write to CSV
-    CSV.write("12_Emissions.csv", df)
+    CSV.write(joinpath(results_dir,"12_Emissions.csv"), df)
 
 end

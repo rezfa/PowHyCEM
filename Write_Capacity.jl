@@ -1,7 +1,6 @@
-function write_capacity_files()
-    # ─────────────────────────────────────────────────────────────────────
-    # 1) POWER CAPACITY (generators G and storages S)
-    # ─────────────────────────────────────────────────────────────────────
+function write_capacity_files(datadir::AbstractString)
+
+    results_dir = joinpath(datadir, "Results")
     power_list = Vector{Tuple{Any,String,Float64,Float64,Float64}}()
     for g in G
         header  = pow_gen[g, :resource]
@@ -51,8 +50,7 @@ function write_capacity_files()
         df_p[4, col] = retv
         df_p[5, col] = totv
     end
-
-    CSV.write("01_Capacity_Power.csv", df_p)
+    CSV.write(joinpath(results_dir, "01_Capacity_Power.csv"), df_p)
 
     # ─────────────────────────────────────────────────────────────────────
     # 2) H₂ CAPACITY (generators H and storages Q)
@@ -105,14 +103,14 @@ function write_capacity_files()
         df_h[4, col] = retv
         df_h[5, col] = totv
     end
-
-    CSV.write("02_Capacity_H2.csv", df_h)
+    CSV.write(joinpath(results_dir, "02_Capacity_H2.csv"), df_h)
 end
 
-function write_line_capacity_files()
+function write_line_capacity_files(datadir)
     # ───────────────────────────
     # Power lines
     # ───────────────────────────
+    results_dir = joinpath(datadir, "Results")
     df_pl = DataFrame(
         Line    = Int[],
         Existing= Float64[],
@@ -127,8 +125,7 @@ function write_line_capacity_files()
         total   = existing + newv 
         push!(df_pl, (l, existing, newv, total))
     end
-
-    CSV.write("03_Line_Capacity_Power.csv", df_pl)
+    CSV.write(joinpath(results_dir, "03_Line_Capacity_Power.csv"), df_pl)
 
 
     # ───────────────────────────
@@ -153,7 +150,6 @@ function write_line_capacity_files()
         pipe_comp = hsc_pipelines[i, :existing_comp_cap_tonne_hr] + value(vNewH2PipeCompCap[i]) - value(vRetH2PipeCompCap[i])
         push!(df_hp, (i, existing, newv, retired, total, total_cap, pipe_comp))
     end
-
-    CSV.write("04_Pipe_Capacity_H2.csv", df_hp)
+    CSV.write(joinpath(results_dir, "04_Pipe_Capacity_H2.csv"), df_hp)
 
 end

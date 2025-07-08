@@ -1,4 +1,6 @@
-function write_land_use_data()
+function write_land_use_data(datadir)
+
+    results_dir = joinpath(datadir, "results")
     df_sum = DataFrame(
         zone            = Int[],
         total_used      = Float64[],  # sum of new land
@@ -80,7 +82,7 @@ function write_land_use_data()
     end
 
     # Write the summary to CSV
-    CSV.write("05_Land_use.csv", df_sum)
+    CSV.write(joinpath(results_dir,"05_Land_use.csv"), df_sum)
 
     return df_sum
 end

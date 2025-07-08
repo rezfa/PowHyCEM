@@ -1,4 +1,4 @@
-function write_costs_files(
+function write_costs_files(datadir,
     SP_models,
     pow_gen, hsc_gen,
     G, S, H, Q,
@@ -6,6 +6,7 @@ function write_costs_files(
     H2Gen_vals, H2StoCha_vals,
     W, T
 )
+    results_dir = joinpath(datadir, "Results")
     # Total timesteps
     timesteps = [(w,t) for w in W for t in T]
 
@@ -102,7 +103,7 @@ function write_costs_files(
         df_pc[!, Symbol(name)] = [row1, row2, row3, row4, row5]
     end
 
-    CSV.write("21_Costs_Power.csv", df_pc)
+    CSV.write(joinpath(results_dir,"21_Costs_Power.csv"), df_pc)
 
     # ─────────────────────────────────────────────────────────────────────
     # 2) H₂ COSTS
@@ -211,11 +212,11 @@ function write_costs_files(
         df_hc[!, Symbol(name)] = [row1, row2, row3, row4, row5]
     end
 
-    CSV.write("22_Costs_H2.csv", df_hc)
+    CSV.write(joinpath(results_dir, "22_Costs_H2.csv"), df_hc)
 end
 
-function write_line_costs_power(pow_lines, L)
-    
+function write_line_costs_power(datadir,pow_lines, L)
+    results_dir = joinpath(datadir, "Results")
     attrs = ["Inv_Cost"]
     df = DataFrame(Attribute = attrs)
     
@@ -227,17 +228,17 @@ function write_line_costs_power(pow_lines, L)
         df[!, Symbol(string(l))] = [invc * new_cap]
     end
     
-    CSV.write("23_Power_Line_Costs.csv", df)
+    CSV.write(joinpath(results_dir, "23_Power_Line_Costs.csv"), df)
 
 end
 
-function write_h2_pipe_costs(
+function write_h2_pipe_costs(datadir,
     hsc_pipelines, I,
     H2FlowPos_vals, H2FlowNeg_vals,
     W, T
     )
     timesteps = [(w,t) for w in W for t in T]
-    
+    results_dir = joinpath(datadir, "Results")
     attrs = [
       "Investment Cost",
       "FOM Cost",
@@ -293,6 +294,6 @@ function write_h2_pipe_costs(
         df[!, Symbol(string(i))] = [row1, row2, row3, row4, row5, row6]
     end
     
-    CSV.write("24_H2_Pipe_Costs.csv", df)
+    CSV.write(joinpath(results_dir, "24_H2_Pipe_Costs.csv"), df)
     
 end

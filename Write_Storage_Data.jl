@@ -1,10 +1,11 @@
-function write_storage_profiles(
+function write_storage_profiles(datadir,
     pow_gen, hsc_gen,
     S, Q,
     PowStoCha_vals, PowStoDis_vals, PowStoSOC_vals,
     H2StoCha_vals, H2StoDis_vals, H2StoSOC_vals,
     W, T
 )
+    results_dir = joinpath(datadir, "results")
     # Total number of hours in the year
     total_hours = length(collect(W)) * length(T)
 
@@ -50,7 +51,7 @@ function write_storage_profiles(
         # Use the resource name (not the ID) as column header
         df_p_ch[!, Symbol(name)] = col
     end
-    CSV.write("13_Power_Charge.csv", df_p_ch)
+    CSV.write(joinpath(results_dir,"13_Power_Charge.csv"), df_p_ch)
 
     #
     # 2) Power Discharge
@@ -74,7 +75,7 @@ function write_storage_profiles(
         end
         df_p_dc[!, Symbol(name)] = col
     end
-    CSV.write("14_Power_Discharge.csv", df_p_dc)
+    CSV.write(joinpath(results_dir,"14_Power_Discharge.csv"), df_p_dc)
 
     #
     # 3) Power SOC
@@ -93,7 +94,7 @@ function write_storage_profiles(
         end
         df_p_soc[!, Symbol(name)] = col
     end
-    CSV.write("15_Power_SOC.csv", df_p_soc)
+    CSV.write(joinpath(results_dir,"15_Power_SOC.csv"), df_p_soc)
 
     #
     # 4) H₂ Charge
@@ -117,7 +118,7 @@ function write_storage_profiles(
         end
         df_h_ch[!, Symbol(name)] = col
     end
-    CSV.write("16_H2_Charge.csv", df_h_ch)
+    CSV.write(joinpath(results_dir,"16_H2_Charge.csv"), df_h_ch)
 
     #
     # 5) H₂ Discharge
@@ -141,7 +142,7 @@ function write_storage_profiles(
         end
         df_h_dc[!, Symbol(name)] = col
     end
-    CSV.write("17_H2_Discharge.csv", df_h_dc)
+    CSV.write(joinpath(results_dir,"17_H2_Discharge.csv"), df_h_dc)
 
     #
     # 6) H₂ SOC
@@ -160,6 +161,6 @@ function write_storage_profiles(
         end
         df_h_soc[!, Symbol(name)] = col
     end
-    CSV.write("18_H2_SOC.csv", df_h_soc)
+    CSV.write(joinpath(results_dir,"18_H2_SOC.csv"), df_h_soc)
 
 end

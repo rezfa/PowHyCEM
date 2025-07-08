@@ -1,14 +1,15 @@
-function write_flows(
+function write_flows(datadir::AbstractString,
     PowFlow_vals::Dict{Tuple{Int,Int,Int},Float64},
     H2FlowPos_vals::Dict{Tuple{Int,Int,Int},Float64},
     H2FlowNeg_vals::Dict{Tuple{Int,Int,Int},Float64},
     pow_lines,
     hsc_pipelines,
-    L::AbstractVector{<:Integer},
-    I::AbstractVector{<:Integer},
-    W::AbstractVector{<:Integer},
-    T::AbstractVector{<:Integer}
+    L::AbstractVector,
+    I::AbstractVector,
+    W::AbstractVector,
+    T::AbstractVector
 )
+    results_dir = joinpath(datadir, "Results")
     # Total number of hours in the year
     total_hours = length(collect(W)) * length(T)
 
@@ -54,7 +55,7 @@ function write_flows(
         df_pow[!, Symbol(string(l))] = col_data
     end
 
-    CSV.write("10_Power_Flows.csv", df_pow)
+    CSV.write(joinpath(results_dir, "10_Power_Flows.csv"), df_pow)
 
 
     # ─────────────────────────────────────────────────────────────────────
@@ -86,6 +87,6 @@ function write_flows(
         df_h2[!, Symbol(string(i))] = col_data
     end
 
-    CSV.write("11_H2_Flows.csv", df_h2)
+    CSV.write(joinpath(results_dir, "11_H2_Flows.csv"), df_h2)
 
 end

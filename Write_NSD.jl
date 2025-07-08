@@ -1,10 +1,11 @@
-function write_nsd_by_zone(
+function write_nsd_by_zone(datadir,
     PowNSD_vals::Dict{Tuple{Int,Int,Int},Float64},
     H2NSD_vals::Dict{Tuple{Int,Int,Int},Float64},
     Z::AbstractVector{<:Integer},
     W::AbstractVector{<:Integer},
     T::AbstractVector{<:Integer}
 )
+    results_dir = joinpath(datadir, "results")
     # Ensure zones sorted
     zones = sort(collect(Z))
     hours_per_week = length(T)
@@ -53,7 +54,7 @@ function write_nsd_by_zone(
     df_pow = DataFrame(merge(Dict(:Zone => labels), pow_columns))
     df_h2  = DataFrame(merge(Dict(:Zone => labels), h2_columns))
 
-    CSV.write("06_Power_NSD.csv", df_pow)
-    CSV.write("07_H2_NSD.csv",  df_h2)
+    CSV.write(joinpath(results_dir,"06_Power_NSD.csv"), df_pow)
+    CSV.write(joinpath(results_dir,"07_H2_NSD.csv"),  df_h2)
 
 end

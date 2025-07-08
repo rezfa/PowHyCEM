@@ -1,10 +1,11 @@
-function write_LCOH(
+function write_LCOH(datadir,
     SP_models, hsc_gen, H, Q,
     H2Gen_vals, H2StoCha_vals,
     H2FlowPos_vals, H2FlowNeg_vals,
     W, T,
     fuel_costs::Dict{<:AbstractString, <:Any}
 )
+    results_dir = joinpath(datadir, "Results")
     # 1) Precompute all (w,t) pairs
     timesteps = [(w, t) for w in W for t in T]
 
@@ -268,6 +269,6 @@ function write_LCOH(
     ))
 
     # 9) Write to CSV
-    CSV.write("25_LCOH_Detail.csv", df)
+    CSV.write(joinpath(results_dir,"25_LCOH_Detail.csv"), df)
 
 end

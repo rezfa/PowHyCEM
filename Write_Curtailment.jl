@@ -1,10 +1,11 @@
-function write_curtailment_by_zone(
+function write_curtailment_by_zone(datadir,
     PowCrt_vals::Dict{Tuple{Int,Int,Int},Float64},
     H2Crt_vals::Dict{Tuple{Int,Int,Int},Float64},
     Z::AbstractVector{<:Integer},
     W::AbstractVector{<:Integer},
     T::AbstractVector{<:Integer}
 )
+    results_dir = joinpath(datadir, "Results")
     # Sort zones
     zones = sort(collect(Z))
     total_hours = length(collect(W)) * length(T)
@@ -52,7 +53,7 @@ function write_curtailment_by_zone(
     df_pow = DataFrame(merge(Dict(:Hour => labels), pow_columns))
     df_h2  = DataFrame(merge(Dict(:Hour => labels), h2_columns))
 
-    CSV.write("08_Power_Curtailment.csv", df_pow)
-    CSV.write("09_H2_Curtailment.csv",  df_h2)
+    CSV.write(joinpath(results_dir, "08_Power_Curtailment.csv"), df_pow)
+    CSV.write(joinpath(results_dir, "09_H2_Curtailment.csv"),  df_h2)
     
 end

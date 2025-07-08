@@ -214,7 +214,7 @@ include("Write_LCOH.jl")
     @constraint(MP, cMaxRetH2PipeNum[i in I], vRetH2Pipe[i] <= hsc_pipelines[i, :existing_num_pipes])
     @constraint(MP, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
     #Land Use Constraint on each zone
-    #@constraint(MP, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
+    @constraint(MP, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
     #Policy
     @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*0.4*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
     #Long-Term-Duration Storage
@@ -757,19 +757,19 @@ include("Write_LCOH.jl")
         println("Stopped without full convergence. Current best solution cost = ", round(UB, digits=2))
     end
 
-    write_capacity_files()
-    write_line_capacity_files()
-    write_land_use_data()
-    write_nsd_by_zone(PowNSD_vals, H2NSD_vals, Z, W, T)
-    write_curtailment_by_zone(PowCrt_vals, H2Crt_vals, Z, W, T)
-    write_flows(PowFlow_vals, H2FlowPos_vals, H2FlowNeg_vals, pow_lines, hsc_pipelines, L, I, W, T)
-    write_emissions_detail(SP_models, Z, W)
-    write_storage_profiles(pow_gen, hsc_gen, S, Q, PowStoCha_vals, PowStoDis_vals, PowStoSOC_vals, H2StoCha_vals, H2StoDis_vals, H2StoSOC_vals, W, T)
-    write_generation_profiles(pow_gen, hsc_gen, G, H, PowGen_vals, H2Gen_vals, W, T)
-    write_costs_files(SP_models, pow_gen, hsc_gen, G, S, H, Q, PowGen_vals, PowStoCha_vals, H2Gen_vals, H2StoCha_vals, W, T)
-    write_line_costs_power(pow_lines, L)
-    write_h2_pipe_costs(hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
-    write_LCOH(SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
+    write_capacity_files(datadir)
+    write_line_capacity_files(datadir)
+    write_land_use_data(datadir)
+    write_nsd_by_zone(datadir,PowNSD_vals, H2NSD_vals, Z, W, T)
+    write_curtailment_by_zone(datadir,PowCrt_vals, H2Crt_vals, Z, W, T)
+    write_flows(datadir, PowFlow_vals, H2FlowPos_vals, H2FlowNeg_vals, pow_lines, hsc_pipelines, L, I, W, T)
+    write_emissions_detail(datadir,SP_models, Z, W)
+    write_storage_profiles(datadir,pow_gen, hsc_gen, S, Q, PowStoCha_vals, PowStoDis_vals, PowStoSOC_vals, H2StoCha_vals, H2StoDis_vals, H2StoSOC_vals, W, T)
+    write_generation_profiles(datadir,pow_gen, hsc_gen, G, H, PowGen_vals, H2Gen_vals, W, T)
+    write_costs_files(datadir, SP_models, pow_gen, hsc_gen, G, S, H, Q, PowGen_vals, PowStoCha_vals, H2Gen_vals, H2StoCha_vals, W, T)
+    write_line_costs_power(datadir, pow_lines, L)
+    write_h2_pipe_costs(datadir, hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
+    write_LCOH(datadir,SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
 
 #end
 

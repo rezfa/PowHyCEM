@@ -1,9 +1,10 @@
-function write_generation_profiles(
+function write_generation_profiles(datadir,
     pow_gen, hsc_gen,
     G, H,
     PowGen_vals, H2Gen_vals,
     W, T
 )
+    results_dir = joinpath(datadir, "Results")
     # Total number of hours in the year
     total_hours = length(collect(W)) * length(T)
 
@@ -43,7 +44,7 @@ function write_generation_profiles(
         # Use the resource name as column header
         df_p_gen[!, Symbol(name)] = col
     end
-    CSV.write("19_Power_Gen.csv", df_p_gen)
+    CSV.write(joinpath(results_dir,"19_Power_Gen.csv"), df_p_gen)
 
     #
     # 2) H₂ generation by source
@@ -71,7 +72,7 @@ function write_generation_profiles(
 
         df_h2_gen[!, Symbol(name)] = col
     end
-    CSV.write("20_H2_Gen.csv", df_h2_gen)
+    CSV.write(joinpath(results_dir,"20_H2_Gen.csv"), df_h2_gen)
 
 
 end
