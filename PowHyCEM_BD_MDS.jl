@@ -1,4 +1,6 @@
-using JuMP, Gurobi, DataFrames, CSV, Plots
+using JuMP, Gurobi, DataFrames, CSV, Plots, Measures, Profile
+
+const SCALE = 1e9 
 
 include("Write_Capacity.jl")
 include("Write_Land_use.jl")
@@ -10,31 +12,30 @@ include("Write_Storage_Data.jl")
 include("Write_Generations.jl")
 include("Write_costs.jl")
 include("Write_LCOH.jl")
+include("Write_demand_profiles.jl")
 
-
-    LB = -Inf
-    UB = Inf
-    k = 1
-    max_iter = 1000
-    tolerence = 1e-3
-
-#function run_benders(datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data"))
+const INTEGER_MODE = Ref(false) 
+LB = -Inf
+UB = Inf
+k = 1
+max_iter = 1000
+tolerence = 1e-3
+gap = (UB - LB) / max(1e-6, abs(LB))
     
-    
-    datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
+datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
  # ---------- 1.  raw tables ------------------------------------------------
-    pow_gen       = CSV.read(joinpath(datadir, "Powe_Gen_Data.csv"),  DataFrame)
-    pow_gen_var   = CSV.read(joinpath(datadir, "Pow_Gen_Var.csv"),    DataFrame)
-    pow_load      = CSV.read(joinpath(datadir, "Pow_Load.csv"),       DataFrame)
-    pow_lines     = CSV.read(joinpath(datadir, "Pow_Network.csv"),    DataFrame)
+pow_gen       = CSV.read(joinpath(datadir, "Powe_Gen_Data.csv"),  DataFrame)
+pow_gen_var   = CSV.read(joinpath(datadir, "Pow_Gen_Var.csv"),    DataFrame)
+pow_load      = CSV.read(joinpath(datadir, "Pow_Load.csv"),       DataFrame)
+pow_lines     = CSV.read(joinpath(datadir, "Pow_Network.csv"),    DataFrame)
 
-    hsc_gen       = CSV.read(joinpath(datadir, "HSC_Gen_Data.csv"),   DataFrame)
-    hsc_gen_var   = CSV.read(joinpath(datadir, "HSC_Gen_Var.csv"),    DataFrame)
-    hsc_load      = CSV.read(joinpath(datadir, "HSC_load.csv"),       DataFrame)
-    hsc_pipelines = CSV.read(joinpath(datadir, "HSC_Pipelines.csv"),  DataFrame)
+hsc_gen       = CSV.read(joinpath(datadir, "HSC_Gen_Data.csv"),   DataFrame)
+hsc_gen_var   = CSV.read(joinpath(datadir, "HSC_Gen_Var.csv"),    DataFrame)
+hsc_load      = CSV.read(joinpath(datadir, "HSC_load.csv"),       DataFrame)
+hsc_pipelines = CSV.read(joinpath(datadir, "HSC_Pipelines.csv"),  DataFrame)
 
-    fuel          = CSV.read(joinpath(datadir, "Fuels_data.csv"),     DataFrame)
-    zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
+fuel          = CSV.read(joinpath(datadir, "Fuels_data.csv"),     DataFrame)
+zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
 
     # ---------- 2.  make headers lower-case ----------------------------------
     for f in (pow_gen, pow_load, pow_lines,
@@ -102,24 +103,31 @@ include("Write_LCOH.jl")
     LB_hist  = Float64[]
     UB_hist  = Float64[]
     gap_hist = Float64[]
+    iter_max  = isempty(iters) ? 0 : last(iters)
+    tick_step = 1
 
     # Create the empty figure and the three series (legend only here):
-    plt = plot(size=(1000,600),
+    plt = plot(size=(800,480),
            xlabel="Iteration",
-           ylabel="Cost (×10⁶)",
+           ylabel="Cost (billion €)",
+           xticks = (1:tick_step:iter_max),
            legend=:topright,
-           ylim=(500,5000))
+           ylim=(0,100),
+           grid=:dot,
+           margin = 8mm,
+           guidefont = font("Times", 11),
+            tickfont  = font("Times", 9),
+            legendfont= font("Times", 9))
 
     # initialize the series (empty for now)
     plot!(plt, iters, LB_hist,  label="LB",  color=:blue)
     plot!(plt, iters, UB_hist,  label="UB",  color=:red)
-    #plot!(plt, iters, gap_hist, label="Gap", color=:green, linestyle=:dash)
 
 
     #Defining the Master Problem
     MP = Model(Gurobi.Optimizer)
-    set_optimizer_attribute(MP, "Method", 2)      
-    set_optimizer_attribute(MP, "Crossover", 0)
+    #set_optimizer_attribute(MP, "Method", 1)      
+    #set_optimizer_attribute(MP, "Crossover", 0)
     set_optimizer_attribute(MP, "OutputFlag", 0)
     set_optimizer_attribute(MP, "LogToConsole", 0)
     set_optimizer_attribute(MP,"MIPGap",1e-3)
@@ -142,7 +150,9 @@ include("Write_LCOH.jl")
     @variable(MP, vNewH2PipeCompCap[i in I]>=0, Int)
     @variable(MP, vRetH2PipeCompCap[i in I]>=0, Int)
     @variable(MP, vNewH2StoCompCap[s in Q]>=0, Int)
-    @variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)   
+    @variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)  
+    # ---- Lanc Coversion Variable ---- # 
+    @variable(MP, vLandConversion[z in Z]>=0)
     # ---- Emission Budget Variable ---- #
     @variable(MP, vMaxEmissionByWeek[w in W]>=0)
     # ---- Long-Term-Duration Storage ---- #
@@ -180,9 +190,11 @@ include("Write_LCOH.jl")
                                         hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i] + 
                                         hsc_pipelines[i, :fom_comp_p_tonne_hr]*eTotH2PipeCompCap[i] for i in I)
     )
+    @expression(MP, eTotalLandUse[z in Z], sum(ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] for z in Z))
+    @expression(MP, eCostLandConversion, sum(vLandConversion[z]*zones[z,:land_conversion_cost_p_km2] for z in Z))
 
     # ---- MP Objective ---- # 
-    MP_obj = eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv 
+    MP_obj = eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv + eCostLandConversion
     @objective(MP, Min, MP_obj .+ sum(theta[w] for w in W))
 
     # ---- MP Constraints ---- #
@@ -214,7 +226,8 @@ include("Write_LCOH.jl")
     @constraint(MP, cMaxRetH2PipeNum[i in I], vRetH2Pipe[i] <= hsc_pipelines[i, :existing_num_pipes])
     @constraint(MP, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
     #Land Use Constraint on each zone
-    @constraint(MP, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
+    @constraint(MP, cLandUse[z in Z], eTotalLandUse[z] .- zones[z, :maximum_available_land]<=0 )
+    @constraint(MP, cLandUseConversion[z in Z], eTotalLandUse[z] - vLandConversion[z] <= zones[z, :available_land])
     #Policy
     @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*0.4*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
     #Long-Term-Duration Storage
@@ -223,6 +236,11 @@ include("Write_LCOH.jl")
     @constraint(MP, cH2SOCCapFirst[s in Q, w in W], vH2SOCFirst[s,w] <= eTotH2StoCap[s])
     @constraint(MP, cH2SOCCapLast[s in Q, w in W], vH2SOCLast[s,w] <= eTotH2StoCap[s])
 
+    const ALPHA = 0.5                      
+    integer_mode  = false      
+    levelset_con  = nothing :: Union{ConstraintRef,Nothing}
+    φ = 0
+    
     # Defining the Sub Problem
     SP_models = Vector{Model}(undef, length(W))
     SP = Model(Gurobi.Optimizer)
@@ -496,6 +514,33 @@ include("Write_LCOH.jl")
         @constraint(SP_models[w], cEmissionCapByWeek, eEmissionByWeek .- vExtraEmission .- eMaxEmissionByWeek<= 0)
     end
 
+    function toggle_integrality!(make_integer::Bool)
+        containers = (
+            vNewPowGenCap,  vRetPowGenCap,
+            vNewPowStoCap,  vRetPowStoCap,
+            vNewPowTraCap,
+            vNewH2GenCap,   vRetH2GenCap,
+            vNewH2StoCap,   vRetH2StoCap,
+            vNewH2Pipe,     vRetH2Pipe,
+            vNewH2PipeCompCap, vRetH2PipeCompCap,
+            vNewH2StoCompCap, vRetH2StoCompCap,
+        )
+    
+        for c in containers, v in c
+            if make_integer
+                # promote only if not already integer
+                !JuMP.is_integer(v) && JuMP.set_integer(v)
+            else
+                # demote only if currently integer
+                JuMP.is_integer(v) && JuMP.unset_integer(v)
+            end
+        end
+    
+        INTEGER_MODE[] = make_integer
+        return
+    end
+
+    toggle_integrality!(false)
 
     
     # Solve initial Master Problem to get a starting investment plan
@@ -538,38 +583,25 @@ include("Write_LCOH.jl")
     PowFlow_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (l,w,t)
     H2FlowPos_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
     H2FlowNeg_vals = Dict{Tuple{Int,Int,Int},Float64}() # key = (i,w,t)
+    Pow_D_vals = Dict{Tuple{Int,Int,Int},Float64}()   # (z,w,t)
+    H2_D_vals  = Dict{Tuple{Int,Int,Int},Float64}()   # (z,w,t)
     
     for w in W
         cc = coupling[w]
-
-        # Fix available capacities for week w to the values from MP's current solution
-        availPowGenCap   = SP_models[w][:eAvailPowGenCap] 
-        availPowGenUnit = SP_models[w][:eAvailPowGenUnit]
-        availPowStoCap   = SP_models[w][:eAvailPowStoCap]
-        availPowTraCap   = SP_models[w][:eAvailPowTraCap]
-        availH2GenCap    = SP_models[w][:eAvailH2GenCap]
-        availH2GenUnit  = SP_models[w][:eAvailH2GenUnit]
-        availH2StoCap    = SP_models[w][:eAvailH2StoCap]
-        availH2Pipe      = SP_models[w][:eAvailH2Pipe]
-        availH2PipeCompCap = SP_models[w][:eAvailH2PipeCompCap]
-        availH2StoCompCap = SP_models[w][:eAvailH2StoCompCap]
-        availeEmissionMaxByWeek = SP_models[w][:eMaxEmissionByWeek]
-        availH2SOCFirst = SP_models[w][:eH2SOCFirst]
-        availH2SOCLast = SP_models[w][:eH2SOCLast]
         
-        cAvailPowGenCap = @constraint(SP_models[w], [g in G], availPowGenCap[g] == value(eTotPowGenCap[g]))
-        cAvailPowGenUnit = @constraint(SP_models[w], [g in G_ther], availPowGenUnit[g] == pow_gen[g,:num_units] + (value(vNewPowGenCap[g]) - value(vRetPowGenCap[g])))
-        cAvailPowStoCap = @constraint(SP_models[w], [s in S], availPowStoCap[s] == value(eTotPowStoCap[s]))
-        cAvailPowTraCap = @constraint(SP_models[w], [l in L], availPowTraCap[l] == value(vNewPowTraCap[l]) + pow_lines[l, :existing_transmission_cap_mw] )
-        cAvailH2GenCap = @constraint(SP_models[w], [h in H_dis], availH2GenCap[h] == value(eTotH2GenCap[h]))
-        cAvailH2GenUnit = @constraint(SP_models[w], [h in H_ther], availH2GenUnit[h] == hsc_gen[h,:num_units] + (value(vNewH2GenCap[h]) - value(vRetH2GenCap[h])))
-        cAvailH2StoCap = @constraint(SP_models[w], [s in Q], availH2StoCap[s] == value(eTotH2StoCap[s]))
-        cAvailH2Pipe = @constraint(SP_models[w], [i in I], availH2Pipe[i] == value(eTotH2Pipe[i]))
-        cAvailH2PipeCompCap = @constraint(SP_models[w], [i in I], availH2PipeCompCap[i] == value(eTotH2PipeCompCap[i]))
-        cAvailH2StoCompCap = @constraint(SP_models[w], [s in Q], availH2StoCompCap[s] == value(eTotH2StoCompCap[s]))
-        cEmission = @constraint(SP_models[w], availeEmissionMaxByWeek == value(vMaxEmissionByWeek[w]))
-        cH2SOCFirst = @constraint(SP_models[w], [s in Q], availH2SOCFirst[s] == value(vH2SOCFirst[s,w]))
-        cH2SOCLast = @constraint(SP_models[w], [s in Q], availH2SOCLast[s] == value(vH2SOCLast[s,w]))
+        cAvailPowGenCap = @constraint(SP_models[w], [g in G], SP_models[w][:eAvailPowGenCap][g] == value(eTotPowGenCap[g]))
+        cAvailPowGenUnit = @constraint(SP_models[w], [g in G_ther], SP_models[w][:eAvailPowGenUnit][g] == pow_gen[g,:num_units] + (value(vNewPowGenCap[g]) - value(vRetPowGenCap[g])))
+        cAvailPowStoCap = @constraint(SP_models[w], [s in S], SP_models[w][:eAvailPowStoCap][s] == value(eTotPowStoCap[s]))
+        cAvailPowTraCap = @constraint(SP_models[w], [l in L], SP_models[w][:eAvailPowTraCap][l] == value(vNewPowTraCap[l]) + pow_lines[l, :existing_transmission_cap_mw] )
+        cAvailH2GenCap = @constraint(SP_models[w], [h in H_dis], SP_models[w][:eAvailH2GenCap][h] == value(eTotH2GenCap[h]))
+        cAvailH2GenUnit = @constraint(SP_models[w], [h in H_ther], SP_models[w][:eAvailH2GenUnit][h] == hsc_gen[h,:num_units] + (value(vNewH2GenCap[h]) - value(vRetH2GenCap[h])))
+        cAvailH2StoCap = @constraint(SP_models[w], [s in Q], SP_models[w][:eAvailH2StoCap][s] == value(eTotH2StoCap[s]))
+        cAvailH2Pipe = @constraint(SP_models[w], [i in I], SP_models[w][:eAvailH2Pipe][i] == value(eTotH2Pipe[i]))
+        cAvailH2PipeCompCap = @constraint(SP_models[w], [i in I], SP_models[w][:eAvailH2PipeCompCap][i] == value(eTotH2PipeCompCap[i]))
+        cAvailH2StoCompCap = @constraint(SP_models[w], [s in Q], SP_models[w][:eAvailH2StoCompCap][s] == value(eTotH2StoCompCap[s]))
+        cEmission = @constraint(SP_models[w], SP_models[w][:eMaxEmissionByWeek] == value(vMaxEmissionByWeek[w]))
+        cH2SOCFirst = @constraint(SP_models[w], [s in Q], SP_models[w][:eH2SOCFirst][s] == value(vH2SOCFirst[s,w]))
+        cH2SOCLast = @constraint(SP_models[w], [s in Q], SP_models[w][:eH2SOCLast][s] == value(vH2SOCLast[s,w]))
 
         cc[:gencap]    = Dict(g => cAvailPowGenCap[g]    for g in G)
         cc[:genunit]   = Dict(g => cAvailPowGenUnit[g]   for g in G_ther)
@@ -644,66 +676,106 @@ include("Write_LCOH.jl")
                 dual(coupling[w][:emission])*(vMaxEmissionByWeek[w] - vMaxEmissionByWeek_val[w])
             )
         end
-        
+
+        set_objective_function(MP, MP_obj + sum(theta[w] for w in W))
         optimize!(MP)
         println("MP status after adding cuts: ", termination_status(MP))
         @assert termination_status(MP) == MOI.OPTIMAL
         global LB = objective_value(MP)
         println(" → Updated MP objective (LB) = ", round(LB, digits=2))
         println(" → Gap = ", round((UB - LB)*100/abs(LB), digits=2),"%")
+
+        
+
+        # ===  CONTINUOUS STAGE  ==========================================
+        if !integer_mode
+            # (Re-)build / update the level-set constraint
+            rhs = LB + ALPHA * (UB - LB)
+            if levelset_con === nothing
+                levelset_con = @constraint(MP, MP_obj + sum(theta[w] for w in W) <= rhs )
+            else
+                JuMP.set_normalized_rhs(levelset_con, rhs)
+            end
+
+            # temporarily overwrite the objective with   min φ
+            JuMP.set_objective_function(MP, φ)     # objective is now the dummy scalar
+            optimize!(MP)                         # barrier w/out crossover already set ↑
+
+
+            # if gap small enough  ➜  switch to MILP stage
+            if (UB - LB)/abs(LB) < 0.01    #  < 1 %
+                println("→  switching to integer mode (gap < 1 %)")
+                # (i) drop the level-set cut
+                delete(MP, levelset_con);   levelset_con = nothing
+                # (ii) restore the true objective
+                JuMP.set_objective_function(MP, MP_obj + sum(theta[w] for w in W))
+                # (iii) turn integrality on
+                toggle_integrality!(true)
+                integer_mode = true
+                # use default branch-&-bound options if you like
+                set_optimizer_attribute(MP, "Method", 1)      
+                set_optimizer_attribute(MP, "Crossover", 0)
+                optimize!(MP)
+            end
+
+         # ===  INTEGER (MILP) STAGE  ======================================
+        else
+            optimize!(MP)    
+            # quit if final gap reached (e.g. 0.1 %)
+            if (UB - LB) / max(1e-6, abs(LB)) <= tolerence
+                println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
+                for w in W
+                    sp = SP_models[w]
+                    for z in Z, t in T
+                        PowNSD_vals[(z, w, t)] = value(sp[:vPowNSD][z, t])
+                        H2NSD_vals[(z, w, t)]  = value(sp[:vH2NSD][z, t])
+                        PowCrt_vals[(z, w, t)] = value(sp[:vPowCrt][z, t])
+                        H2Crt_vals[(z, w, t)]  = value(sp[:vH2Crt][z, t])
+                        Pow_D_vals[(z, w, t)] = value(sp[:pow_D][t, z]) 
+                        H2_D_vals[(z, w, t)]  = value(sp[:H2_D][t, z])
+                    end
+                    for g in G, t in T
+                        PowGen_vals[(g, w, t)] = value(sp[:vPowGen][g, t])
+                    end
+                    for h in H, t in T
+                        H2Gen_vals[(h, w, t)] = value(sp[:vH2Gen][h, t])
+                    end
+                    for s in S, t in T
+                        PowStoCha_vals[(s, w, t)] = value(sp[:vPowStoCha][s, t])
+                        PowStoDis_vals[(s, w, t)] = value(sp[:vPowStoDis][s, t])
+                        PowStoSOC_vals[(s, w, t)] = value(sp[:vPowSOC][s, t])
+                    end
+                    for s in Q, t in T
+                        H2StoCha_vals[(s, w, t)] = value(sp[:vH2StoCha][s, t])
+                        H2StoDis_vals[(s, w, t)] = value(sp[:vH2StoDis][s, t])
+                        H2StoSOC_vals[(s, w, t)] = value(sp[:vH2StoSOC][s, t])
+                    end
+                    for l in L, t in T
+                        PowFlow_vals[(l, w, t)] = value(sp[:vPowFlow][l, t])
+                    end
+                    for i in I, t in T
+                        H2FlowPos_vals[(i, w, t)] = value(sp[:vH2FlowPos][i, t])
+                        H2FlowNeg_vals[(i, w, t)] = value(sp[:vH2FlowNeg][i, t])
+                    end
+                end
+                break
+            end
+        end
         
         push!(iters, k)
-        push!(LB_hist, LB  / 1e6)   
-        push!(UB_hist, UB  / 1e6)
+        push!(LB_hist, LB  / SCALE)   
+        push!(UB_hist, UB  / SCALE)
 
         # update each curve *without* re-adding legend entries
         if k % 10 == 0 || (UB - LB)/abs(LB + eps()) <= tolerence
             # update curves without legends
             plot!(plt, iters, LB_hist, color=:blue, label=false)
             plot!(plt, iters, UB_hist, color=:red,  label=false)
-            #plot!(plt, iters, gap_hist,color=:black,label="UB–LB")
     
-            display(plt)  # redraw large plot
-    
+            display(plt)
+
             println("Iter $k ▶  LB = $(round(LB/1e6, digits=3))e6, UB = $(round(UB/1e6, digits=3))e6, ",
                     "rel gap = $(round((UB-LB)/abs(LB + eps())*100, digits=3))%")
-        end
-        
-        if (UB - LB)/abs(LB) <= tolerence
-            println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
-            for w in W
-                sp = SP_models[w]
-                for z in Z, t in T
-                    PowNSD_vals[(z, w, t)] = value(sp[:vPowNSD][z, t])
-                    H2NSD_vals[(z, w, t)]  = value(sp[:vH2NSD][z, t])
-                    PowCrt_vals[(z, w, t)] = value(sp[:vPowCrt][z, t])
-                    H2Crt_vals[(z, w, t)]  = value(sp[:vH2Crt][z, t])
-                end
-                for g in G, t in T
-                    PowGen_vals[(g, w, t)] = value(sp[:vPowGen][g, t])
-                end
-                for h in H, t in T
-                    H2Gen_vals[(h, w, t)] = value(sp[:vH2Gen][h, t])
-                end
-                for s in S, t in T
-                    PowStoCha_vals[(s, w, t)] = value(sp[:vPowStoCha][s, t])
-                    PowStoDis_vals[(s, w, t)] = value(sp[:vPowStoDis][s, t])
-                    PowStoSOC_vals[(s, w, t)] = value(sp[:vPowSOC][s, t])
-                end
-                for s in Q, t in T
-                    H2StoCha_vals[(s, w, t)] = value(sp[:vH2StoCha][s, t])
-                    H2StoDis_vals[(s, w, t)] = value(sp[:vH2StoDis][s, t])
-                    H2StoSOC_vals[(s, w, t)] = value(sp[:vH2StoSOC][s, t])
-                end
-                for l in L, t in T
-                    PowFlow_vals[(l, w, t)] = value(sp[:vPowFlow][l, t])
-                end
-                for i in I, t in T
-                    H2FlowPos_vals[(i, w, t)] = value(sp[:vH2FlowPos][i, t])
-                    H2FlowNeg_vals[(i, w, t)] = value(sp[:vH2FlowNeg][i, t])
-                end
-            end
-            break
         end
         k += 1
 
@@ -747,9 +819,11 @@ include("Write_LCOH.jl")
             set_normalized_rhs(coupling[w][:emission], value(vMaxEmissionByWeek[w]))
         end
 
-
     end
+
     
+    results_dir = joinpath(datadir, "Results")
+    savefig(plt, joinpath(results_dir, "Convergence_LB_UB.png"))
     println("Done: Iterations = $k, final gap = ", round(UB - LB, digits=4))
     if UB - LB <= tolerence
         println("Optimal objective = ", round(UB, digits=2))
@@ -770,6 +844,7 @@ include("Write_LCOH.jl")
     write_line_costs_power(datadir, pow_lines, L)
     write_h2_pipe_costs(datadir, hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
     write_LCOH(datadir,SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
+    write_demand_profiles_wide(datadir, pow_demand, h2_demand, Pow_D_vals, H2_D_vals, Z, W, T)
 
 #end
 

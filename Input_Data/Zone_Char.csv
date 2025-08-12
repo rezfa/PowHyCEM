@@ -1,2 +1,4 @@
-﻿Zones,Zone_name,Zone_code,Pow_NSD_Share,HSC_NSD_Share,Voll_Pow,Voll_HSC,Available_Land,Emission_Cap_Tonne_CO2,Emission_cost,Pow_Curtail_cost,H2_Curtail_cost
-1,Groningen,NL11,0.1,0.1,50000,200000,798.72,20000,500,0,1000
+﻿Zones,Zone_name,Zone_code,Pow_NSD_Share,HSC_NSD_Share,Voll_Pow,Voll_HSC,Available_Land,Maximum_Available_land,Land_conversion_cost_p_km2,Emission_Cap_Tonne_CO2,Emission_cost,Pow_Curtail_cost,H2_Curtail_cost
+1,Groningen,NL11,0.1,0.1,1000000,5000000,12.45,24,636600,20000,250,100,1000
+2,Fryslan,NL12,0.1,0.1,1000000,5000000,62.46,96,636600,30000,250,100,1000
+3,Drenthe,NL13,0.1,0.1,1000000,5000000,21.735,40,636600,40000,250,100,1000

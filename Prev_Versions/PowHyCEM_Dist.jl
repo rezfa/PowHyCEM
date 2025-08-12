@@ -1,6 +1,5 @@
 
 using Distributed
-
 @everywhere begin
     using JuMP, Gurobi, DataFrames, CSV, Plots
 
@@ -24,7 +23,7 @@ tolerence = 1e-3
 
     
     
-    datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/PowHyCEM/Input_Data")
+    datadir = joinpath("/home4/p317375/PowHyCEM/Input_Data")
  # ---------- 1.  raw tables ------------------------------------------------
     pow_gen       = CSV.read(joinpath(datadir, "Powe_Gen_Data.csv"),  DataFrame)
     pow_gen_var   = CSV.read(joinpath(datadir, "Pow_Gen_Var.csv"),    DataFrame)
@@ -84,7 +83,7 @@ tolerence = 1e-3
     for w in W
         h2_demand[w] = Matrix(hsc_load[H_w[w], start_h:start_h+length(Z)-1])
     end
-
+    
     # ---------- 6.  fuel price & emission dictionaries -----------------------
     fuels        = names(fuel)[2:end]
     costs        = Matrix(fuel[2:end, 2:end])
@@ -122,349 +121,357 @@ tolerence = 1e-3
 
     @everywhere function solve_week!(w::Int, MP_vals::NamedTuple, ConstData::NamedTuple)
 
-        const GUROBI_PARAMS = [
-        "Threads"       => 1,
-        "Method"        => 2,
-        "Crossover"     => 1,
-        "OutputFlag"    => 0,
-        "LogToConsole"  => 0,
-        "MIPGap"        => 1e-3,
-        "BarConvTol"    => 1e-3,
-        "OptimalityTol" => 1e-3,
-        ]
-
-
-        SP_models[w] = Model(Gurobi.Optimizer)
-        set_optimizer_attribute(SP_models[w], "Threads", 1)
-        set_optimizer_attribute(SP_models[w], "Method", 2)   
-        set_optimizer_attribute(SP_models[w], "Crossover", 1)
-        set_optimizer_attribute(SP_models[w], "OutputFlag", 0)
-        set_optimizer_attribute(SP_models[w], "LogToConsole", 0)
-        set_optimizer_attribute(SP_models[w],"MIPGap",1e-3)
-        set_optimizer_attribute(SP_models[w], "BarConvTol", 1e-3)
-        set_optimizer_attribute(SP_models[w], "OptimalityTol", 1e-3)
+        SP = Model(Gurobi.Optimizer)
+        set_optimizer_attribute(SP, "OutputFlag", 0)
+        set_optimizer_attribute(SP, "LogToConsole", 0)
+        set_optimizer_attribute(SP, "Threads", 1)
+        set_optimizer_attribute(SP, "Method", 2)   
+        set_optimizer_attribute(SP, "Crossover", 1)
+        set_optimizer_attribute(SP,"MIPGap",1e-3)
+        set_optimizer_attribute(SP, "BarConvTol", 1e-3)
+        set_optimizer_attribute(SP, "OptimalityTol", 1e-3)
         
             # ---- SP Variables ---- #
             # Power Generation DV #
-        @variable(SP_models[w], vPowGen[g in G, t in T]>=0)
-        @variable(SP_models[w], vPowGenFirst[g in G]>=0)
-        @variable(SP_models[w], vPowGenOnline[g in G_ther, t in T]>=0)
-        @variable(SP_models[w], vPowGenOnlineFirst[g in G_ther]>=0)
-        @variable(SP_models[w], vPowGenStart[g in G_ther, t in T]>=0)
-        @variable(SP_models[w], vPowGenShut[g in G_ther, t in T]>=0)
-        @variable(SP_models[w], vPowResUp[g in G_ther, t in T]>=0)
-        @variable(SP_models[w], vPowResDn[g in G_ther, t in T]>=0)
+        @variable(SP, vPowGen[g in ConstData.G, t in ConstData.T]>=0)
+        @variable(SP, vPowGenFirst[g in ConstData.G]>=0)
+        @variable(SP, vPowGenOnline[g in ConstData.G_ther, t in ConstData.T]>=0)
+        @variable(SP, vPowGenOnlineFirst[g in ConstData.G_ther]>=0)
+        @variable(SP, vPowGenStart[g in ConstData.G_ther, t in ConstData.T]>=0)
+        @variable(SP, vPowGenShut[g in ConstData.G_ther, t in ConstData.T]>=0)
+        @variable(SP, vPowResUp[g in ConstData.G_ther, t in ConstData.T]>=0)
+        @variable(SP, vPowResDn[g in ConstData.G_ther, t in ConstData.T]>=0)
             # Power Storage DV 
-        @variable(SP_models[w], vPowStoCha[s in S, t in T]>=0)
-        @variable(SP_models[w], vPowStoDis[s in S, t in T]>=0)
-        @variable(SP_models[w], vPowSOC[s in S, t in T]>=0)
-        @variable(SP_models[w], vPowSOCFirst[s in S]>=0)
+        @variable(SP, vPowStoCha[s in ConstData.S, t in ConstData.T]>=0)
+        @variable(SP, vPowStoDis[s in ConstData.S, t in ConstData.T]>=0)
+        @variable(SP, vPowSOC[s in ConstData.S, t in ConstData.T]>=0)
+        @variable(SP, vPowSOCFirst[s in ConstData.S]>=0)
             # Power Transmission DV #
-        @variable(SP_models[w], vPowFlow[l in L, t in T])
+        @variable(SP, vPowFlow[l in ConstData.L, t in ConstData.T])
             # HSC Generation DV
-        @variable(SP_models[w], vH2Gen[h in H, t in T]>=0)
-        @variable(SP_models[w], vH2GenFirst[h in H]>=0)
-        @variable(SP_models[w], vH2GenStart[h in H_ther, t in T]>=0)
-        @variable(SP_models[w], vH2GenShut[h in H_ther, t in T]>=0)
-        @variable(SP_models[w], vH2GenOnline[h in H_ther, t in T]>=0)
-        @variable(SP_models[w], vH2GenOnlineFirst[h in H_ther]>=0)
+        @variable(SP, vH2Gen[h in ConstData.H, t in ConstData.T]>=0)
+        @variable(SP, vH2GenFirst[h in ConstData.H]>=0)
+        @variable(SP, vH2GenStart[h in ConstData.H_ther, t in ConstData.T]>=0)
+        @variable(SP, vH2GenShut[h in ConstData.H_ther, t in ConstData.T]>=0)
+        @variable(SP, vH2GenOnline[h in ConstData.H_ther, t in ConstData.T]>=0)
+        @variable(SP, vH2GenOnlineFirst[h in ConstData.H_ther]>=0)
             # HSC Storage DV
-        @variable(SP_models[w], vH2StoCha[s in Q, t in T]>=0)
-        @variable(SP_models[w], vH2StoDis[s in Q, t in T]>=0)
-        @variable(SP_models[w], vH2StoSOC[s in Q, t in T]>=0)
-        @variable(SP_models[w], vH2StoSOCFirst[s in Q]>=0)
+        @variable(SP, vH2StoCha[s in ConstData.Q, t in ConstData.T]>=0)
+        @variable(SP, vH2StoDis[s in ConstData.Q, t in ConstData.T]>=0)
+        @variable(SP, vH2StoSOC[s in ConstData.Q, t in ConstData.T]>=0)
+        @variable(SP, vH2StoSOCFirst[s in ConstData.Q]>=0)
             # HSC Transmission DV
-        @variable(SP_models[w], vH2FlowPos[i in I, t in T]>=0)
-        @variable(SP_models[w], vH2FlowNeg[i in I, t in T]>=0)
+        @variable(SP, vH2FlowPos[i in ConstData.I, t in ConstData.T]>=0)
+        @variable(SP, vH2FlowNeg[i in ConstData.I, t in ConstData.T]>=0)
         
             # Policy Variables
-        @variable(SP_models[w], vH2NSD[z in Z, t in T]>=0)
-        @variable(SP_models[w], vPowNSD[z in Z, t in T]>=0)
-        @variable(SP_models[w], vPowCrt[z in Z, t in T]>=0)
-        @variable(SP_models[w], vH2Crt[z in Z, t in T]>=0)
-        @variable(SP_models[w], vExtraEmission>=0)
+        @variable(SP, vH2NSD[z in ConstData.Z, t in ConstData.T]>=0)
+        @variable(SP, vPowNSD[z in ConstData.Z, t in ConstData.T]>=0)
+        @variable(SP, vPowCrt[z in ConstData.Z, t in ConstData.T]>=0)
+        @variable(SP, vH2Crt[z in ConstData.Z, t in ConstData.T]>=0)
+        @variable(SP, vExtraEmission>=0)
             # Variables foe availability of generation, storage and transmission
-        @variable(SP_models[w], eAvailPowGenCap[g in G]>=0)
-        @variable(SP_models[w], eAvailPowGenUnit[g in G_ther]>=0)
-        @variable(SP_models[w], eAvailPowStoCap[s in S]>=0)
-        @variable(SP_models[w], eAvailPowTraCap[l in L]>=0)
-        @variable(SP_models[w], eAvailH2GenCap[h in H]>=0)
-        @variable(SP_models[w], eAvailH2GenUnit[h in H_ther]>=0)
-        @variable(SP_models[w], eAvailH2StoCap[s in Q]>=0)
-        @variable(SP_models[w], eAvailH2Pipe[i in I]>=0)
-        @variable(SP_models[w], eAvailH2PipeCompCap[i in I]>=0)
-        @variable(SP_models[w], eAvailH2StoCompCap[s in Q]>=0)
-        @variable(SP_models[w], eMaxEmissionByWeek>=0)
+        @variable(SP, eAvailPowGenCap[g in ConstData.G]>=0)
+        @variable(SP, eAvailPowGenUnit[g in ConstData.G_ther]>=0)
+        @variable(SP, eAvailPowStoCap[s in ConstData.S]>=0)
+        @variable(SP, eAvailPowTraCap[l in ConstData.L]>=0)
+        @variable(SP, eAvailH2GenCap[h in ConstData.H]>=0)
+        @variable(SP, eAvailH2GenUnit[h in ConstData.H_ther]>=0)
+        @variable(SP, eAvailH2StoCap[s in ConstData.Q]>=0)
+        @variable(SP, eAvailH2Pipe[i in ConstData.I]>=0)
+        @variable(SP, eAvailH2PipeCompCap[i in ConstData.I]>=0)
+        @variable(SP, eAvailH2StoCompCap[s in ConstData.Q]>=0)
+        @variable(SP, eMaxEmissionByWeek>=0)
             
-            # ---- SP_models[w] Expressions ---- #
+            # ---- SP Expressions ---- #
             # Power Generation Expressions #
-        @expression(SP_models[w], ePowGenByZone[z in Z, t in T], sum(vPowGen[g,t] * (pow_gen[g, :zone] == z ? 1 : 0) for g in G))
-        @expression(SP_models[w], eTotPowGenCapByZone[z in Z], sum(eAvailPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in G_ther))
+        @expression(SP, ePowGenByZone[z in ConstData.Z, t in ConstData.T], sum(vPowGen[g,t] * (ConstData.pow_gen[g, :zone] == z ? 1 : 0) for g in ConstData.G))
+        @expression(SP, eTotPowGenCapByZone[z in ConstData.Z], sum(eAvailPowGenCap[g]*(ConstData.pow_gen[g,:zone] == z ? 1 : 0) for g in ConstData.G_ther))
             # Power Storage Expressions #
-        @expression(SP_models[w], ePowStoChaByZone[z in Z, t in T], sum(vPowStoCha[s,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
-        @expression(SP_models[w], ePowStoDisByZone[z in Z, t in T], sum(vPowStoDis[s,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
+        @expression(SP, ePowStoChaByZone[z in ConstData.Z, t in ConstData.T], sum(vPowStoCha[s,t] * (ConstData.pow_gen[s, :zone] == z ? 1 : 0) for s in ConstData.S))
+        @expression(SP, ePowStoDisByZone[z in ConstData.Z, t in ConstData.T], sum(vPowStoDis[s,t] * (ConstData.pow_gen[s, :zone] == z ? 1 : 0) for s in ConstData.S))
             # Power Transmission Expressions #
-        @expression(SP_models[w], eNet_Pow_Flow[z in Z, t in T], sum(Pow_Network[l,z] * vPowFlow[l,t] for l in L))
-        @expression(SP_models[w], ePow_Loss_By_Zone[z in Z, t in T], sum(abs(Pow_Network[l,z]) * (1/2) *vPowFlow[l,t] * pow_lines[l, :line_loss_percentage] for l in L))
+        @expression(SP, eNet_Pow_Flow[z in ConstData.Z, t in ConstData.T], sum(ConstData.Pow_Network[l,z] * vPowFlow[l,t] for l in ConstData.L))
+        @expression(SP, ePow_Loss_By_Zone[z in ConstData.Z, t in ConstData.T], sum(abs(ConstData.Pow_Network[l,z]) * (1/2) *vPowFlow[l,t] * ConstData.pow_lines[l, :line_loss_percentage] for l in ConstData.L))
             # HSC Generation Expressions
-        @expression(SP_models[w], eH2FlowNet[i in I, t in T], vH2FlowPos[i,t] - vH2FlowNeg[i,t])
-        @expression(SP_models[w], eH2GenEvap[h in H, t in T], hsc_gen[h, :boil_off]*vH2Gen[h,t])
-        @expression(SP_models[w], eH2GenByZone[z in Z, t in T], sum((vH2Gen[h,t] - eH2GenEvap[h,t]) * (hsc_gen[h,:zone] == z ? 1 : 0) for h in H))
-        @expression(SP_models[w], eH2StoChaByZone[z in Z, t in T], sum(vH2StoCha[s,t] * (hsc_gen[s, :zone] == z ? 1 : 0) for s in Q))
-        @expression(SP_models[w], eH2StoDisByZone[z in Z, t in T], sum(vH2StoDis[s,t] * (hsc_gen[s, :zone] == z ? 1 : 0) for s in Q))
-        @expression(SP_models[w], eH2FlowByZone[i in I, z in Z, t in T], H2_Network[i,z] * eH2FlowNet[i,t])  # H2 flow contribution to zone z (H2_Network is pipeline incidence matrix)
-        @expression(SP_models[w], eNet_H2_Flow[z in Z, t in T], sum(H2_Network[i,z] * eH2FlowNet[i,t] for i in I))
-        @expression(SP_models[w], eH2_Loss_By_Zone[z in Z, t in T], sum(abs(H2_Network[i,z]) * 0.5 * eH2FlowNet[i,t] * hsc_pipelines[i,:pipe_loss_coeff] for i in I))
+        @expression(SP, eH2FlowNet[i in ConstData.I, t in ConstData.T], vH2FlowPos[i,t] - vH2FlowNeg[i,t])
+        @expression(SP, eH2GenEvap[h in ConstData.H, t in ConstData.T], ConstData.hsc_gen[h, :boil_off]*vH2Gen[h,t])
+        @expression(SP, eH2GenByZone[z in ConstData.Z, t in ConstData.T], sum((vH2Gen[h,t] - eH2GenEvap[h,t]) * (ConstData.hsc_gen[h,:zone] == z ? 1 : 0) for h in ConstData.H))
+        @expression(SP, eH2StoChaByZone[z in ConstData.Z, t in ConstData.T], sum(vH2StoCha[s,t] * (ConstData.hsc_gen[s, :zone] == z ? 1 : 0) for s in ConstData.Q))
+        @expression(SP, eH2StoDisByZone[z in ConstData.Z, t in ConstData.T], sum(vH2StoDis[s,t] * (ConstData.hsc_gen[s, :zone] == z ? 1 : 0) for s in ConstData.Q))
+        @expression(SP, eH2FlowByZone[i in ConstData.I, z in ConstData.Z, t in ConstData.T], ConstData.H2_Network[i,z] * eH2FlowNet[i,t])  # H2 flow contribution to zone z (H2_Network is pipeline incidence matrix)
+        @expression(SP, eNet_H2_Flow[z in ConstData.Z, t in ConstData.T], sum(ConstData.H2_Network[i,z] * eH2FlowNet[i,t] for i in ConstData.I))
+        @expression(SP, eH2_Loss_By_Zone[z in ConstData.Z, t in ConstData.T], sum(abs(ConstData.H2_Network[i,z]) * 0.5 * eH2FlowNet[i,t] * ConstData.hsc_pipelines[i,:pipe_loss_coeff] for i in ConstData.I))
             # Sector-coupling Demands
-        @expression(SP_models[w], ePowDemandHSC[z in Z, t in T], 
-            sum(hsc_gen[h, :pow_demand_mwh_p_tonne]*vH2Gen[h,t]*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H) +
-            sum(hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,t]*(hsc_gen[s, :zone]==z ? 1 : 0) for s in Q)
+        @expression(SP, ePowDemandHSC[z in ConstData.Z, t in ConstData.T], 
+            sum(ConstData.hsc_gen[h, :pow_demand_mwh_p_tonne]*vH2Gen[h,t]*(ConstData.hsc_gen[h, :zone]==z ? 1 : 0) for h in ConstData.H) +
+            sum(ConstData.hsc_gen[s, :h2charge_mwh_p_tonne]*vH2StoCha[s,t]*(ConstData.hsc_gen[s, :zone]==z ? 1 : 0) for s in ConstData.Q)
         )
-        @expression(SP_models[w], eH2DemandPow[z in Z, t in T], sum(pow_gen[g, :h2_demand_tonne_p_mwh]*vPowGen[g,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G))
-        @expression(SP_models[w], pow_D[t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[z,t])
-        @expression(SP_models[w], H2_D[t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[z,t])
+        @expression(SP, eH2DemandPow[z in ConstData.Z, t in ConstData.T], sum(ConstData.pow_gen[g, :h2_demand_tonne_p_mwh]*vPowGen[g,t]*(ConstData.pow_gen[g, :zone]==z ? 1 : 0) for g in ConstData.G))
+        @expression(SP, pow_D[t in ConstData.T, z in ConstData.Z], ConstData.pow_demand[w][t,z] .+ ePowDemandHSC[z,t])
+        @expression(SP, H2_D[t in ConstData.T, z in ConstData.Z], ConstData.h2_demand[w][t,z] .+ eH2DemandPow[z,t])
             #Power Generation reserve constraints
-        @expression(SP_models[w], ePowResReqUp[z in Z, t in T], 0.1*eTotPowGenCapByZone[z] )
-        @expression(SP_models[w], ePowResReqDn[z in Z, t in T], 0.05 * eTotPowGenCapByZone[z])
+        @expression(SP, ePowResReqUp[z in ConstData.Z, t in ConstData.T], 0.1*eTotPowGenCapByZone[z] )
+        @expression(SP, ePowResReqDn[z in ConstData.Z, t in ConstData.T], 0.05 * eTotPowGenCapByZone[z])
             # Emission Expressions
-        @expression(SP_models[w], eEmissionByWeek, 
-            sum(vPowGen[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]] for g in G, t in T) + 
-            sum(vH2Gen[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H, t in T) +
-            sum(vPowGenStart[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]] for g in G_ther, t in T) +
-            sum(vH2GenStart[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H_ther, t in T)
+        @expression(SP, eEmissionByWeek, 
+            sum(vPowGen[g,t]*ConstData.pow_gen[g, :heat_rate_mmbtu_per_mwh]*ConstData.CO2_content[ConstData.pow_gen[g, :fuel]] for g in ConstData.G, t in ConstData.T) + 
+            sum(vPowGenStart[g,t]*ConstData.pow_gen[g, :heat_rate_mmbtu_per_mwh]*ConstData.CO2_content[ConstData.pow_gen[g, :fuel]] for g in ConstData.G_ther, t in ConstData.T) +
+            sum(vPowGenStart[g,t]*ConstData.pow_gen[g, :heat_rate_mmbtu_per_mwh]*ConstData.CO2_content[ConstData.pow_gen[g, :fuel]] for g in ConstData.G_ther, t in ConstData.T) +
+            sum(vH2GenStart[h,t]*ConstData.hsc_gen[h, :heat_rate_mmbtu_p_tonne]*ConstData.CO2_content[ConstData.hsc_gen[h, :fuel]] for h in ConstData.H_ther, t in ConstData.T)
         )
-        @expression(SP_models[w], eEmissionByWeekZone[z in Z],
-            sum(vPowGen[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G, t in T) + 
-            sum(vH2Gen[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H, t in T) +
-            sum(vPowGenStart[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther, t in T) +
-            sum(vH2GenStart[h,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H_ther, t in T)
+        @expression(SP, eEmissionByWeekZone[z in ConstData.Z],
+            sum(vPowGen[g,t]*ConstData.pow_gen[g, :heat_rate_mmbtu_per_mwh]*ConstData.CO2_content[ConstData.pow_gen[g, :fuel]]*(ConstData.pow_gen[g,:zone]==z ? 1 : 0) for g in ConstData.G, t in ConstData.T) + 
+            sum(vH2Gen[h,t]*ConstData.hsc_gen[h, :heat_rate_mmbtu_p_tonne]*ConstData.CO2_content[ConstData.hsc_gen[h, :fuel]]*(ConstData.hsc_gen[h,:zone]==z ? 1 : 0) for h in ConstData.H, t in ConstData.T) +
+            sum(vPowGenStart[g,t]*ConstData.pow_gen[g, :heat_rate_mmbtu_per_mwh]*ConstData.CO2_content[ConstData.pow_gen[g, :fuel]]*(ConstData.pow_gen[g,:zone]==z ? 1 : 0) for g in ConstData.G_ther, t in ConstData.T) +
+            sum(vH2GenStart[h,t]*ConstData.hsc_gen[h, :heat_rate_mmbtu_p_tonne]*ConstData.CO2_content[ConstData.hsc_gen[h, :fuel]]*(ConstData.hsc_gen[h,:zone]==z ? 1 : 0) for h in ConstData.H_ther, t in ConstData.T)
         )
             
             # Power Cost Expressions
-        @expression(SP_models[w], eCostPowGenVar, sum((pow_gen[g, :vom_cost_mwh] + pow_gen[g, :heat_rate_mmbtu_per_mwh] .* fuel_costs[pow_gen[g, :fuel]][t]) .* vPowGen[g,t] for g in G, t in T))
-        @expression(SP_models[w], eCostPowGenStart, sum(pow_gen[g, :start_cost_per_mw] .* pow_gen[g, :rep_capacity] .* vPowGenStart[g,t] for g in G_ther, t in T)) 
-        @expression(SP_models[w], eCostPowStoVar, sum(vPowStoCha[s,t] .* pow_gen[s, :vom_cost_mwh_charge] for s in S, t in T))
+        @expression(SP, eCostPowGenVar, sum((ConstData.pow_gen[g, :vom_cost_mwh] + ConstData.pow_gen[g, :heat_rate_mmbtu_per_mwh] .* ConstData.fuel_costs[ConstData.pow_gen[g, :fuel]][t]) .* vPowGen[g,t] for g in ConstData.G, t in ConstData.T))
+        @expression(SP, eCostPowGenStart, sum(ConstData.pow_gen[g, :start_cost_per_mw] .* ConstData.pow_gen[g, :rep_capacity] .* vPowGenStart[g,t] for g in ConstData.G_ther, t in ConstData.T)) 
+        @expression(SP, eCostPowStoVar, sum(vPowStoCha[s,t] .* ConstData.pow_gen[s, :vom_cost_mwh_charge] for s in ConstData.S, t in ConstData.T))
             # HSC Cost Expressions
-        @expression(SP_models[w], eCostH2GenVar, sum((hsc_gen[h, :vom_cost_p_tonne] + hsc_gen[h, :heat_rate_mmbtu_p_tonne] .* fuel_costs[lowercase(hsc_gen[h, :fuel])][t]) .* vH2Gen[h,t] for h in H, t in T)    )
-        @expression(SP_models[w], eCostH2StoVar, sum(hsc_gen[s, :var_om_cost_charge_p_tonne]*vH2StoCha[s,t] for s in Q, t in T))
-        @expression(SP_models[w], eCostH2GenStart, sum(hsc_gen[h, :startup_cost_p_tonne_hr] .* hsc_gen[h, :rep_capacity] .* vH2GenStart[h,t] for h in H_ther, t in T))
-        @expression(SP_models[w], eCostH2TraVar, sum(hsc_pipelines[i, :vom_per_tonne]*(vH2FlowPos[i,t]+vH2FlowNeg[i,t]) for i in I, t in T))
+        @expression(SP, eCostH2GenVar, sum((ConstData.hsc_gen[h, :vom_cost_p_tonne] + ConstData.hsc_gen[h, :heat_rate_mmbtu_p_tonne] .* ConstData.fuel_costs[lowercase(ConstData.hsc_gen[h, :fuel])][t]) .* vH2Gen[h,t] for h in ConstData.H, t in ConstData.T))
+        @expression(SP, eCostH2StoVar, sum(ConstData.hsc_gen[s, :var_om_cost_charge_p_tonne]*vH2StoCha[s,t] for s in ConstData.Q, t in ConstData.T))
+        @expression(SP, eCostH2GenStart, sum(ConstData.hsc_gen[h, :startup_cost_p_tonne_hr] .* ConstData.hsc_gen[h, :rep_capacity] .* vH2GenStart[h,t] for h in ConstData.H_ther, t in ConstData.T))
+        @expression(SP, eCostH2TraVar, sum(ConstData.hsc_pipelines[i, :vom_per_tonne]*(vH2FlowPos[i,t]+vH2FlowNeg[i,t]) for i in ConstData.I, t in ConstData.T))
             #NSD and Curtailment Cost Expressions 
-        @expression(SP_models[w], eCostH2NSD, sum(vH2NSD[z,t] .* zones[z, :voll_hsc] for z in Z, t in T))
-        @expression(SP_models[w], eCostPowNSD, sum(vPowNSD[z,t] .* zones[z, :voll_pow] for z in Z, t in T)) 
-        @expression(SP_models[w], eCostPowCrt, sum(vPowCrt[z,t] .* zones[z, :pow_curtail_cost] for z in Z, t in T))
-        @expression(SP_models[w], eCostH2Crt, sum(vH2Crt[z,t] .* zones[z, :h2_curtail_cost] for z in Z, t in T))
+        @expression(SP, eCostH2NSD, sum(vH2NSD[z,t] .* ConstData.zones[z, :voll_hsc] for z in ConstData.Z, t in ConstData.T))
+        @expression(SP, eCostPowNSD, sum(vPowNSD[z,t] .* ConstData.zones[z, :voll_pow] for z in ConstData.Z, t in ConstData.T)) 
+        @expression(SP, eCostPowCrt, sum(vPowCrt[z,t] .* ConstData.zones[z, :pow_curtail_cost] for z in ConstData.Z, t in ConstData.T))
+        @expression(SP, eCostH2Crt, sum(vH2Crt[z,t] .* ConstData.zones[z, :h2_curtail_cost] for z in ConstData.Z, t in ConstData.T))
             #Emission Cost Expression
-        @expression(SP_models[w], eEmissionCost, vExtraEmission * zones[1, :emission_cost] )
+        @expression(SP, eEmissionCost, vExtraEmission * ConstData.zones[1, :emission_cost] )
             
-            # ---- SP_models[w] Objective ---- #  
+            # ---- SP Objective ---- #  
             
-        @objective(SP_models[w], Min, eCostPowGenVar + eCostPowStoVar + eCostPowGenStart + eCostH2GenVar + eCostH2StoVar + eCostH2TraVar + eCostH2GenStart + eCostPowNSD + eCostH2NSD + eCostPowCrt + eCostH2Crt + eEmissionCost)
+        @objective(SP, Min, eCostPowGenVar + eCostPowStoVar + eCostPowGenStart + eCostH2GenVar + eCostH2StoVar + eCostH2TraVar + eCostH2GenStart + eCostPowNSD + eCostH2NSD + eCostPowCrt + eCostH2Crt + eEmissionCost)
 
             # ---- SP Constraints ---- #
             # Power Balance #
-        @constraint(SP_models[w], cPowerBalance[z in Z, t in T],
+        @constraint(SP, cPowerBalance[z in ConstData.Z, t in ConstData.T],
             ePowGenByZone[z,t] .+ eNet_Pow_Flow[z,t] .- ePow_Loss_By_Zone[z,t] .+ ePowStoDisByZone[z,t] .- ePowStoChaByZone[z,t] .+ vPowNSD[z,t] .- vPowCrt[z,t] == pow_D[t,z]
         )
             # H2 Balance #
-        @constraint(SP_models[w], cH2Balance[z in Z, t in T],
+        @constraint(SP, cH2Balance[z in ConstData.Z, t in ConstData.T],
             eH2GenByZone[z,t] .+ eNet_H2_Flow[z,t] .- eH2_Loss_By_Zone[z,t] .+ eH2StoDisByZone[z,t] .- eH2StoChaByZone[z,t] .+ vH2NSD[z,t] .- vH2Crt[z,t] == H2_D[t,z]
         )
 
             # Power Generation #
-        @constraint(SP_models[w], cMaxPowGen[g in G_ren, t in T], vPowGen[g,t] - eAvailPowGenCap[g] * pow_gen_var[H_w[w][t], pow_gen[g, :resource]] <= 0)
-        @constraint(SP_models[w], cPowOnlineUnits[g in G_ther, t in T], vPowGenOnline[g,t] .- eAvailPowGenUnit[g]<= 0)
-        @constraint(SP_models[w], cPowStartLimits[g in G_ther,t in T], vPowGenStart[g,t] .- eAvailPowGenUnit[g] .+ vPowGenOnline[g,t]<= 0)
-        @constraint(SP_models[w], cMaxPowGenTher[g in G_ther, t in T], vPowGen[g,t] .- (pow_gen[g, :rep_capacity].*pow_gen[g,:max_op_level].*vPowGenOnline[g,t]) <= 0)
-        @constraint(SP_models[w], cMinPowGenTher[g in G_ther, t in T], (pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,t]) .- vPowGen[g,t] <= 0)
-        @constraint(SP_models[w], cPowShutLimits[g in G_ther, t in T], vPowGenShut[g,t] .- vPowGenOnline[g,t] <= 0)
+        @constraint(SP, cMaxPowGen[g in ConstData.G_ren, t in ConstData.T], vPowGen[g,t] - eAvailPowGenCap[g] * ConstData.pow_gen_var[ConstData.H_w[w][t], ConstData.pow_gen[g, :resource]] <= 0)
+        @constraint(SP, cPowOnlineUnits[g in ConstData.G_ther, t in ConstData.T], vPowGenOnline[g,t] .- eAvailPowGenUnit[g]<= 0)
+        @constraint(SP, cPowStartLimits[g in ConstData.G_ther,t in ConstData.T], vPowGenStart[g,t] .- eAvailPowGenUnit[g] .+ vPowGenOnline[g,t]<= 0)
+        @constraint(SP, cMaxPowGenTher[g in ConstData.G_ther, t in ConstData.T], vPowGen[g,t] .- (ConstData.pow_gen[g, :rep_capacity].*ConstData.pow_gen[g,:max_op_level].*vPowGenOnline[g,t]) <= 0)
+        @constraint(SP, cMinPowGenTher[g in ConstData.G_ther, t in ConstData.T], (ConstData.pow_gen[g, :rep_capacity]*ConstData.pow_gen[g,:min_op_level]*vPowGenOnline[g,t]) .- vPowGen[g,t] <= 0)
+        @constraint(SP, cPowShutLimits[g in ConstData.G_ther, t in ConstData.T], vPowGenShut[g,t] .- vPowGenOnline[g,t] <= 0)
             #Spinning Reserve Constraints
-        @constraint(SP_models[w], cPowResUpMax[g in G_ther, t in T], vPowResUp[g,t] .+ vPowGen[g,t] .-  pow_gen[g, :rep_capacity]*pow_gen[g,:max_op_level]*vPowGenOnline[g,t] <=0)
-        @constraint(SP_models[w], cPowResDnMax[g in G_ther, t in T], vPowResDn[g,t] .+ pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,t] .- vPowGen[g,t] <= 0) 
-        @constraint(SP_models[w], cPowResUP[g in G_ther, t in T], vPowResUp[g,t] .- eAvailPowGenCap[g]*pow_gen[g,:ramp_up] <=0)
-        @constraint(SP_models[w], cPowResDn[g in G_ther, t in T], vPowResDn[g,t] .- eAvailPowGenCap[g]*pow_gen[g,:ramp_dn] <=0)
-        @constraint(SP_models[w], cPowResReqUp[z in Z, t in T], ePowResReqUp[z,t] .- sum(vPowResUp[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
-        @constraint(SP_models[w], cPowResReqDn[z in Z, t in T], ePowResReqDn[z,t] .- sum(vPowResDn[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
+        @constraint(SP, cPowResUpMax[g in ConstData.G_ther, t in ConstData.T], vPowResUp[g,t] .+ vPowGen[g,t] .-  ConstData.pow_gen[g, :rep_capacity]*ConstData.pow_gen[g,:max_op_level]*vPowGenOnline[g,t] <=0)
+        @constraint(SP, cPowResDnMax[g in ConstData.G_ther, t in ConstData.T], vPowResDn[g,t] .+ ConstData.pow_gen[g, :rep_capacity]*ConstData.pow_gen[g,:min_op_level]*vPowGenOnline[g,t] .- vPowGen[g,t] <= 0) 
+        @constraint(SP, cPowResUP[g in ConstData.G_ther, t in ConstData.T], vPowResUp[g,t] .- eAvailPowGenCap[g]*ConstData.pow_gen[g,:ramp_up] <=0)
+        @constraint(SP, cPowResDn[g in ConstData.G_ther, t in ConstData.T], vPowResDn[g,t] .- eAvailPowGenCap[g]*ConstData.pow_gen[g,:ramp_dn] <=0)
+        @constraint(SP, cPowResReqUp[z in ConstData.Z, t in ConstData.T], ePowResReqUp[z,t] .- sum(vPowResUp[g,t] * (ConstData.pow_gen[g,:zone]==z ? 1 : 0) for g in ConstData.G_ther)<= 0)
+        @constraint(SP, cPowResReqDn[z in ConstData.Z, t in ConstData.T], ePowResReqDn[z,t] .- sum(vPowResDn[g,t] * (ConstData.pow_gen[g,:zone]==z ? 1 : 0) for g in ConstData.G_ther)<= 0)
             #Cyclic constraint on Thermal power units
-        @constraint(SP_models[w], cPowUnitOnlineCon[g in G_ther, t in 2:length(T)], vPowGenOnline[g,t] - vPowGenOnline[g,t-1] == vPowGenStart[g,t]-vPowGenShut[g,t])
-        @constraint(SP_models[w], cPowUnitOnlineFirst[g in G_ther], vPowGenOnline[g,1] - vPowGenOnlineFirst[g] == vPowGenStart[g,1]-vPowGenShut[g,1])
-        @constraint(SP_models[w], cPowUnitOnlineCycle[g in G_ther], vPowGenOnlineFirst[g] == vPowGenOnline[g,168])
+        @constraint(SP, cPowUnitOnlineCon[g in ConstData.G_ther, t in 2:length(ConstData.T)], vPowGenOnline[g,t] - vPowGenOnline[g,t-1] == vPowGenStart[g,t]-vPowGenShut[g,t])
+        @constraint(SP, cPowUnitOnlineFirst[g in ConstData.G_ther], vPowGenOnline[g,1] - vPowGenOnlineFirst[g] == vPowGenStart[g,1]-vPowGenShut[g,1])
+        @constraint(SP, cPowUnitOnlineCycle[g in ConstData.G_ther], vPowGenOnlineFirst[g] == vPowGenOnline[g,168])
             #Ramping of non-thermal units 
-        @constraint(SP_models[w], cPowGenRampUp[g in G_ren, t in 2:length(T)], vPowGen[g,t]-vPowGen[g,t-1] .- pow_gen[g, :ramp_up] * eAvailPowGenCap[g]<= 0) 
-        @constraint(SP_models[w], cPowGenRampUpFirst[g in G_ren], vPowGen[g,1]-vPowGenFirst[g] .- pow_gen[g, :ramp_up]*eAvailPowGenCap[g]<=0)
-        @constraint(SP_models[w], cPowGenRampDn[g in G_ren, t in 2:length(T)], vPowGen[g,t-1]-vPowGen[g,t] .- pow_gen[g, :ramp_dn] * eAvailPowGenCap[g]<= 0)
-        @constraint(SP_models[w], cPowGenRampDnFirst[g in G_ren], vPowGenFirst[g]-vPowGen[g,1] .- pow_gen[g, :ramp_dn] * eAvailPowGenCap[g]<= 0)
-        @constraint(SP_models[w], cPowGenCycle[g in G_ren], vPowGenFirst[g] == vPowGen[g,168])
+        @constraint(SP, cPowGenRampUp[g in ConstData.G_ren, t in 2:length(ConstData.T)], vPowGen[g,t]-vPowGen[g,t-1] .- ConstData.pow_gen[g, :ramp_up] * eAvailPowGenCap[g]<= 0) 
+        @constraint(SP, cPowGenRampUpFirst[g in ConstData.G_ren], vPowGen[g,1]-vPowGenFirst[g] .- ConstData.pow_gen[g, :ramp_up]*eAvailPowGenCap[g]<=0)
+        @constraint(SP, cPowGenRampDn[g in ConstData.G_ren, t in 2:length(ConstData.T)], vPowGen[g,t-1]-vPowGen[g,t] .- ConstData.pow_gen[g, :ramp_dn] * eAvailPowGenCap[g]<= 0)
+        @constraint(SP, cPowGenRampDnFirst[g in ConstData.G_ren], vPowGenFirst[g]-vPowGen[g,1] .- ConstData.pow_gen[g, :ramp_dn] * eAvailPowGenCap[g]<= 0)
+        @constraint(SP, cPowGenCycle[g in ConstData.G_ren], vPowGenFirst[g] == vPowGen[g,168])
             #Ramping of Thermal units
-        @constraint(SP_models[w], cTherPowGenRampDn[g in G_ther,t in 2:length(T)], 
-            vPowGen[g,t-1] .- vPowGen[g,t] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_dn] *(vPowGenOnline[g,t].-vPowGenStart[g,t])
-            .+ pow_gen[g, :rep_capacity]*vPowGenStart[g,t]*pow_gen[g,:min_op_level] .- vPowGenShut[g,t]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][t], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_dn]))<=0
+        @constraint(SP, cTherPowGenRampDn[g in ConstData.G_ther,t in 2:length(ConstData.T)], 
+            vPowGen[g,t-1] .- vPowGen[g,t] .- ConstData.pow_gen[g, :rep_capacity]*ConstData.pow_gen[g,:ramp_dn] *(vPowGenOnline[g,t].-vPowGenStart[g,t])
+            .+ ConstData.pow_gen[g, :rep_capacity]*vPowGenStart[g,t]*ConstData.pow_gen[g,:min_op_level] .- vPowGenShut[g,t]*ConstData.pow_gen[g, :rep_capacity]*min(ConstData.pow_gen_var[ConstData.H_w[w][t], ConstData.pow_gen[g, :resource]],max(ConstData.pow_gen[g,:min_op_level],ConstData.pow_gen[g,:ramp_dn]))<=0
         )
-        @constraint(SP_models[w], cTherPowGenRampDnFirst[g in G_ther],    
-            vPowGenFirst[g] .- vPowGen[g,1] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_dn] *(vPowGenOnline[g,1].-vPowGenStart[g,1])
-            .+ pow_gen[g, :rep_capacity]*vPowGenStart[g,1]*pow_gen[g,:min_op_level] .- vPowGenShut[g,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][1], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_dn]))<=0
+        @constraint(SP, cTherPowGenRampDnFirst[g in ConstData.G_ther],    
+            vPowGenFirst[g] .- vPowGen[g,1] .- ConstData.pow_gen[g, :rep_capacity]*ConstData.pow_gen[g,:ramp_dn] *(vPowGenOnline[g,1].-vPowGenStart[g,1])
+            .+ ConstData.pow_gen[g, :rep_capacity]*vPowGenStart[g,1]*ConstData.pow_gen[g,:min_op_level] .- vPowGenShut[g,1]*ConstData.pow_gen[g, :rep_capacity]*min(ConstData.pow_gen_var[ConstData.H_w[w][1], ConstData.pow_gen[g, :resource]],max(ConstData.pow_gen[g,:min_op_level],ConstData.pow_gen[g,:ramp_dn]))<=0
         )
 
-        @constraint(SP_models[w], cTherPowGenRampUp[g in G_ther, t in 2:length(T)], 
-            vPowGen[g,t] .- vPowGen[g,t-1] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_up] *(vPowGenOnline[g,t].-vPowGenStart[g,t])
-            .+ pow_gen[g, :rep_capacity]*vPowGenShut[g,t]*pow_gen[g,:min_op_level] .- vPowGenStart[g,t]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][t], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_up]))<=0
+        @constraint(SP, cTherPowGenRampUp[g in ConstData.G_ther, t in 2:length(ConstData.T)], 
+            vPowGen[g,t] .- vPowGen[g,t-1] .- ConstData.pow_gen[g, :rep_capacity]*ConstData.pow_gen[g,:ramp_up] *(vPowGenOnline[g,t].-vPowGenStart[g,t])
+            .+ ConstData.pow_gen[g, :rep_capacity]*vPowGenShut[g,t]*ConstData.pow_gen[g,:min_op_level] .- vPowGenStart[g,t]*ConstData.pow_gen[g, :rep_capacity]*min(ConstData.pow_gen_var[ConstData.H_w[w][t], ConstData.pow_gen[g, :resource]],max(ConstData.pow_gen[g,:min_op_level],ConstData.pow_gen[g,:ramp_up]))<=0
         )   
 
-        @constraint(SP_models[w], cTherPowGenRampUpFirst[g in G_ther], 
-            vPowGen[g,1] .- vPowGenFirst[g] .- pow_gen[g, :rep_capacity]*pow_gen[g,:ramp_up] *(vPowGenOnline[g,1].-vPowGenStart[g,1])
-            .- pow_gen[g, :rep_capacity]*vPowGenShut[g,1]*pow_gen[g,:min_op_level] .+ vPowGenStart[g,1]*pow_gen[g, :rep_capacity]*min(pow_gen_var[H_w[w][1], pow_gen[g, :resource]],max(pow_gen[g,:min_op_level],pow_gen[g,:ramp_up]))<=0
+        @constraint(SP, cTherPowGenRampUpFirst[g in ConstData.G_ther], 
+            vPowGen[g,1] .- vPowGenFirst[g] .- ConstData.pow_gen[g, :rep_capacity]*ConstData.pow_gen[g,:ramp_up] *(vPowGenOnline[g,1].-vPowGenStart[g,1])
+            .- ConstData.pow_gen[g, :rep_capacity]*vPowGenShut[g,1]*ConstData.pow_gen[g,:min_op_level] .+ vPowGenStart[g,1]*ConstData.pow_gen[g, :rep_capacity]*min(ConstData.pow_gen_var[ConstData.H_w[w][1], ConstData.pow_gen[g, :resource]],max(ConstData.pow_gen[g,:min_op_level],ConstData.pow_gen[g,:ramp_up]))<=0
         )
             #Minimum up/donw time for thermal generators
-        @constraint(SP_models[w], cMinUpTimePowGen[g in G_ther,t in T], sum(vPowGenStart[g,tt] for tt in intersect(T, (t - pow_gen[g, :up_time]):t)) .- vPowGenOnline[g,t]<= 0)
-        @constraint(SP_models[w], cMinDnTimePowGen[g in G_ther,t in T], sum(vPowGenShut[g,tt] for tt in intersect(T, (t - pow_gen[g, :down_time]):t)) .- eAvailPowGenUnit[g] .+vPowGenOnline[g,t]<= 0)
+        @constraint(SP, cMinUpTimePowGen[g in ConstData.G_ther,t in ConstData.T], sum(vPowGenStart[g,tt] for tt in intersect(ConstData.T, (t - ConstData.pow_gen[g, :up_time]):t)) .- vPowGenOnline[g,t]<= 0)
+        @constraint(SP, cMinDnTimePowGen[g in ConstData.G_ther,t in ConstData.T], sum(vPowGenShut[g,tt] for tt in intersect(ConstData.T, (t - ConstData.pow_gen[g, :down_time]):t)) .- eAvailPowGenUnit[g] .+vPowGenOnline[g,t]<= 0)
             #Power storage constraints
-        @constraint(SP_models[w], cPowStoBalance[s in S, t in 2:length(T)], vPowSOC[s,t] == (1-pow_gen[s,:etta_self_dis])*vPowSOC[s,t-1] + pow_gen[s,:etta_cha]*vPowStoCha[s,t] - (1/pow_gen[s,:etta_dis])*vPowStoDis[s,t])
-        @constraint(SP_models[w], cPowStoBalanceFirst[s in S], vPowSOC[s,1] == (1-pow_gen[s,:etta_self_dis])*vPowSOCFirst[s] + pow_gen[s,:etta_cha]*vPowStoCha[s,1] .- (1/pow_gen[s,:etta_dis])*vPowStoDis[s,1])
-        @constraint(SP_models[w], cPowStoMaxDis[s in S, t in 2:length(T)], vPowStoDis[s,t] .- pow_gen[s,:etta_dis]*vPowSOC[s,t-1]<= 0)
-        @constraint(SP_models[w], cPowStoMaxDisFirst[s in S], vPowStoDis[s,1] .- pow_gen[s,:etta_dis]*vPowSOCFirst[s]<= 0)
-        @constraint(SP_models[w], cPowSOCCycle[s in S], vPowSOCFirst[s] == vPowSOC[s,168])
-        @constraint(SP_models[w], cPowStoMaxCha[s in S, t in T], vPowStoCha[s,t] .- eAvailPowStoCap[s]<=0)
-        @constraint(SP_models[w], cPowStoSOCMax[s in S, t in T], vPowSOC[s,t] .- eAvailPowStoCap[s]*pow_gen[s, :max_op_level]<=0)
-        @constraint(SP_models[w], cPowStoSOCMin[s in S, t in T], eAvailPowStoCap[s]*pow_gen[s, :min_op_level] .- vPowSOC[s,t]<=0)
+        @constraint(SP, cPowStoBalance[s in ConstData.S, t in 2:length(ConstData.T)], vPowSOC[s,t] == (1-ConstData.pow_gen[s,:etta_self_dis])*vPowSOC[s,t-1] + ConstData.pow_gen[s,:etta_cha]*vPowStoCha[s,t] - (1/ConstData.pow_gen[s,:etta_dis])*vPowStoDis[s,t])
+        @constraint(SP, cPowStoBalanceFirst[s in ConstData.S], vPowSOC[s,1] == (1-ConstData.pow_gen[s,:etta_self_dis])*vPowSOCFirst[s] + ConstData.pow_gen[s,:etta_cha]*vPowStoCha[s,1] .- (1/ConstData.pow_gen[s,:etta_dis])*vPowStoDis[s,1])
+        @constraint(SP, cPowStoMaxDis[s in ConstData.S, t in 2:length(ConstData.T)], vPowStoDis[s,t] .- ConstData.pow_gen[s,:etta_dis]*vPowSOC[s,t-1]<= 0)
+        @constraint(SP, cPowStoMaxDisFirst[s in ConstData.S], vPowStoDis[s,1] .- ConstData.pow_gen[s,:etta_dis]*vPowSOCFirst[s]<= 0)
+        @constraint(SP, cPowSOCCycle[s in ConstData.S], vPowSOCFirst[s] == vPowSOC[s,168])
+        @constraint(SP, cPowStoMaxCha[s in ConstData.S, t in ConstData.T], vPowStoCha[s,t] .- eAvailPowStoCap[s]<=0)
+        @constraint(SP, cPowStoSOCMax[s in ConstData.S, t in ConstData.T], vPowSOC[s,t] .- eAvailPowStoCap[s]*ConstData.pow_gen[s, :max_op_level]<=0)
+        @constraint(SP, cPowStoSOCMin[s in ConstData.S, t in ConstData.T], eAvailPowStoCap[s]*ConstData.pow_gen[s, :min_op_level] .- vPowSOC[s,t]<=0)
             # Power Transmission #
-        @constraints(SP_models[w], begin
-            cMaxPowFlowOut[l in L, t in T],  vPowFlow[l,t] .- eAvailPowTraCap[l]<=0 
-            cMaxPowFlowIn[l in L, t in T],  -eAvailPowTraCap[l] .- vPowFlow[l,t] <=0 
+        @constraints(SP, begin
+            cMaxPowFlowOut[l in ConstData.L, t in ConstData.T],  vPowFlow[l,t] .- eAvailPowTraCap[l]<=0 
+            cMaxPowFlowIn[l in ConstData.L, t in ConstData.T],  -eAvailPowTraCap[l] .- vPowFlow[l,t] <=0 
         end)
             
-        @constraint(SP_models[w], cMaxH2GenVar[h in H_dis, t in T], vH2Gen[h,t] .- eAvailH2GenCap[h]*hsc_gen[h, :max_op_level]*hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]] <= 0)
-        @constraint(SP_models[w], cMinH2GenVar[h in H_dis, t in T], eAvailH2GenCap[h]*hsc_gen[h,:min_op_level]*hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]]  .- vH2Gen[h,t] <= 0)
+        @constraint(SP, cMaxH2GenVar[h in ConstData.H_dis, t in ConstData.T], vH2Gen[h,t] .- eAvailH2GenCap[h]*ConstData.hsc_gen[h, :max_op_level]*ConstData.hsc_gen_var[ConstData.H_w[w][t], ConstData.hsc_gen[h, :resource]] <= 0)
+        @constraint(SP, cMinH2GenVar[h in ConstData.H_dis, t in ConstData.T], eAvailH2GenCap[h]*ConstData.hsc_gen[h,:min_op_level]*ConstData.hsc_gen_var[ConstData.H_w[w][t], ConstData.hsc_gen[h, :resource]]  .- vH2Gen[h,t] <= 0)
             # H2 Thermal units constraints
-        @constraint(SP_models[w], cH2OnlineUnits[h in H_ther, t in T], vH2GenOnline[h,t] .- eAvailH2GenUnit[h]<= 0)
-        @constraint(SP_models[w], cH2StartLimits[h in H_ther, t in T], vH2GenStart[h,t] .- eAvailH2GenUnit[h] .+ vH2GenOnline[h,t]<= 0 ) 
-        @constraint(SP_models[w], cMaxH2GenTher[h in H_ther, t in T], vH2Gen[h,t] .- hsc_gen[h, :max_op_level] * hsc_gen[h, :rep_capacity] * vH2GenOnline[h,t]*hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]]<= 0)
-        @constraint(SP_models[w], cMinH2GenTher[h in H_ther, t in T], hsc_gen[h, :min_op_level] * hsc_gen[h, :rep_capacity] * vH2GenOnline[h,t]*hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]] .- vH2Gen[h,t]<= 0)
-        @constraint(SP_models[w], cH2ShutLimits[h in H_ther, t in T], vH2GenShut[h,t] .- vH2GenOnline[h,t]<= 0)
+        @constraint(SP, cH2OnlineUnits[h in ConstData.H_ther, t in ConstData.T], vH2GenOnline[h,t] .- eAvailH2GenUnit[h]<= 0)
+        @constraint(SP, cH2StartLimits[h in ConstData.H_ther, t in ConstData.T], vH2GenStart[h,t] .- eAvailH2GenUnit[h] .+ vH2GenOnline[h,t]<= 0 ) 
+        @constraint(SP, cMaxH2GenTher[h in ConstData.H_ther, t in ConstData.T], vH2Gen[h,t] .- ConstData.hsc_gen[h, :max_op_level] * ConstData.hsc_gen[h, :rep_capacity] * vH2GenOnline[h,t]*ConstData.hsc_gen_var[ConstData.H_w[w][t], ConstData.hsc_gen[h, :resource]]<= 0)
+        @constraint(SP, cMinH2GenTher[h in ConstData.H_ther, t in ConstData.T], ConstData.hsc_gen[h, :min_op_level] * ConstData.hsc_gen[h, :rep_capacity] * vH2GenOnline[h,t]*ConstData.hsc_gen_var[ConstData.H_w[w][t], ConstData.hsc_gen[h, :resource]] .- vH2Gen[h,t]<= 0)
+        @constraint(SP, cH2ShutLimits[h in ConstData.H_ther, t in ConstData.T], vH2GenShut[h,t] .- vH2GenOnline[h,t]<= 0)
             
             # H2 thermal units cyclic constraints
-        @constraint(SP_models[w], cH2UnitOnlineCon[h in H_ther, t in 2:length(T)], vH2GenOnline[h,t] .- vH2GenOnline[h,t-1] == vH2GenStart[h,t].- vH2GenShut[h,t])
-        @constraint(SP_models[w], cH2UnitOnlineConFirst[h in H_ther], vH2GenOnline[h,1] .- vH2GenOnlineFirst[h] == vH2GenStart[h,1] .- vH2GenShut[h,1])
-        @constraint(SP_models[w], cH2GenOnlineConCycle[h in H_ther], vH2GenOnlineFirst[h] == vH2GenOnline[h,168])
+        @constraint(SP, cH2UnitOnlineCon[h in ConstData.H_ther, t in 2:length(ConstData.T)], vH2GenOnline[h,t] .- vH2GenOnline[h,t-1] == vH2GenStart[h,t].- vH2GenShut[h,t])
+        @constraint(SP, cH2UnitOnlineConFirst[h in ConstData.H_ther], vH2GenOnline[h,1] .- vH2GenOnlineFirst[h] == vH2GenStart[h,1] .- vH2GenShut[h,1])
+        @constraint(SP, cH2GenOnlineConCycle[h in ConstData.H_ther], vH2GenOnlineFirst[h] == vH2GenOnline[h,168])
             # Min Up and Down time for Thermal H2 generators
-        @constraint(SP_models[w], cMinUpTimeH2Gen[h in H_ther, t in T], sum(vH2GenStart[h,tt] for tt in intersect(T, (t - hsc_gen[h, :up_time]):t)) .- vH2GenOnline[h,t]<= 0)
-        @constraint(SP_models[w], cMinDnTimeH2Gen[h in H_ther, t in T], sum(vH2GenShut[h,tt] for tt in intersect(T, (t - hsc_gen[h, :down_time]):t)) .- eAvailH2GenUnit[h] .+ vH2GenOnline[h,t]<= 0)
+        @constraint(SP, cMinUpTimeH2Gen[h in ConstData.H_ther, t in ConstData.T], sum(vH2GenStart[h,tt] for tt in intersect(ConstData.T, (t - ConstData.hsc_gen[h, :up_time]):t)) .- vH2GenOnline[h,t]<= 0)
+        @constraint(SP, cMinDnTimeH2Gen[h in ConstData.H_ther, t in ConstData.T], sum(vH2GenShut[h,tt] for tt in intersect(ConstData.T, (t - ConstData.hsc_gen[h, :down_time]):t)) .- eAvailH2GenUnit[h] .+ vH2GenOnline[h,t]<= 0)
 
-        @constraint(SP_models[w], cH2GenCycle[g in H_dis], vH2GenFirst[g] == vH2Gen[g,168])
-            # Ramp constraints for diSP_models[w]atachable units
-        @constraint(SP_models[w], cH2GenRampUp[g in H_dis, t in 2:length(T)], vH2Gen[g,t]-vH2Gen[g,t-1] .- hsc_gen[g, :ramp_up_percentage] * eAvailH2GenCap[g]<= 0) 
-        @constraint(SP_models[w], cH2GenRampUpFirst[g in H_dis], vH2Gen[g,1]-vH2GenFirst[g] .- hsc_gen[g, :ramp_up_percentage]*eAvailH2GenCap[g]<=0)
-        @constraint(SP_models[w], cH2GenRampDn[g in H_dis, t in 2:length(T)], vH2Gen[g,t-1]-vH2Gen[g,t] .- hsc_gen[g, :ramp_down_percentage] * eAvailH2GenCap[g]<= 0)
-        @constraint(SP_models[w], cH2GenRampDnFirst[g in H_dis], vH2GenFirst[g]-vH2Gen[g,1] .- hsc_gen[g, :ramp_down_percentage] * eAvailH2GenCap[g]<= 0)
+        @constraint(SP, cH2GenCycle[g in ConstData.H_dis], vH2GenFirst[g] == vH2Gen[g,168])
+            # Ramp constraints for diSPatachable units
+        @constraint(SP, cH2GenRampUp[g in ConstData.H_dis, t in 2:length(ConstData.T)], vH2Gen[g,t]-vH2Gen[g,t-1] .- ConstData.hsc_gen[g, :ramp_up_percentage] * eAvailH2GenCap[g]<= 0) 
+        @constraint(SP, cH2GenRampUpFirst[g in ConstData.H_dis], vH2Gen[g,1]-vH2GenFirst[g] .- ConstData.hsc_gen[g, :ramp_up_percentage]*eAvailH2GenCap[g]<=0)
+        @constraint(SP, cH2GenRampDn[g in ConstData.H_dis, t in 2:length(ConstData.T)], vH2Gen[g,t-1]-vH2Gen[g,t] .- ConstData.hsc_gen[g, :ramp_down_percentage] * eAvailH2GenCap[g]<= 0)
+        @constraint(SP, cH2GenRampDnFirst[g in ConstData.H_dis], vH2GenFirst[g]-vH2Gen[g,1] .- ConstData.hsc_gen[g, :ramp_down_percentage] * eAvailH2GenCap[g]<= 0)
             #Ramp Constraint for Thermal units
-        @constraint(SP_models[w], cTherH2GenRampDn[h in H_ther, t in 2:length(T)], 
-            vH2Gen[h,t-1] .- vH2Gen[h,t] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,t].-vH2GenStart[h,t])
-            .+ hsc_gen[h, :rep_capacity]*vH2GenStart[h,t]*hsc_gen[h,:min_op_level] .- vH2GenShut[h,t]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_down_percentage]))<=0
+        @constraint(SP, cTherH2GenRampDn[h in ConstData.H_ther, t in 2:length(ConstData.T)], 
+            vH2Gen[h,t-1] .- vH2Gen[h,t] .- ConstData.hsc_gen[h, :rep_capacity]*ConstData.hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,t].-vH2GenStart[h,t])
+            .+ ConstData.hsc_gen[h, :rep_capacity]*vH2GenStart[h,t]*ConstData.hsc_gen[h,:min_op_level] .- vH2GenShut[h,t]*ConstData.hsc_gen[h, :rep_capacity]*min(ConstData.hsc_gen_var[ConstData.H_w[w][t], ConstData.hsc_gen[h, :resource]],max(ConstData.hsc_gen[h,:min_op_level],ConstData.hsc_gen[h,:ramp_down_percentage]))<=0
         )
-        @constraint(SP_models[w], cTherH2GenRampDnFirst[h in H_ther], 
-                vH2GenFirst[h] .- vH2Gen[h,1] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,1].-vH2GenStart[h,1])
-                .+ hsc_gen[h, :rep_capacity]*vH2GenStart[h,1]*hsc_gen[h,:min_op_level] .- vH2GenShut[h,1]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][1], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_down_percentage]))<=0
-        )
-
-        @constraint(SP_models[w], cTherH2GenRampUp[h in H_ther, t in 2:length(T)], 
-                vH2Gen[h,t] .- vH2Gen[h,t-1] .- hsc_gen[h, :rep_capacity]*hsc_gen[h,:ramp_up_percentage] *(vH2GenOnline[h,t].-vH2GenStart[h,t])
-                .+ hsc_gen[h, :rep_capacity]*vH2GenShut[h,t]*hsc_gen[h,:min_op_level] .- vH2GenStart[h,t]*hsc_gen[h, :rep_capacity]*min(hsc_gen_var[H_w[w][t], hsc_gen[h, :resource]],max(hsc_gen[h,:min_op_level],hsc_gen[h,:ramp_up_percentage]))<=0
+        @constraint(SP, cTherH2GenRampDnFirst[h in ConstData.H_ther], 
+                vH2GenFirst[h] .- vH2Gen[h,1] .- ConstData.hsc_gen[h, :rep_capacity]*ConstData.hsc_gen[h,:ramp_down_percentage] *(vH2GenOnline[h,1].-vH2GenStart[h,1])
+                .+ ConstData.hsc_gen[h, :rep_capacity]*vH2GenStart[h,1]*ConstData.hsc_gen[h,:min_op_level] .- vH2GenShut[h,1]*ConstData.hsc_gen[h, :rep_capacity]*min(ConstData.hsc_gen_var[ConstData.H_w[w][1], ConstData.hsc_gen[h, :resource]],max(ConstData.hsc_gen[h,:min_op_level],ConstData.hsc_gen[h,:ramp_down_percentage]))<=0
         )
 
-        @constraint(SP_models[w], cTherH2GenRampUpFirst[g in H_ther], 
-                vH2Gen[g,1] .- vH2GenFirst[g] .- hsc_gen[g, :rep_capacity]*hsc_gen[g,:ramp_up_percentage] *(vH2GenOnline[g,1].-vH2GenStart[g,1])
-                .- hsc_gen[g, :rep_capacity]*vH2GenShut[g,1]*hsc_gen[g,:min_op_level] .+ vH2GenStart[g,1]*hsc_gen[g, :rep_capacity]*min(hsc_gen_var[H_w[w][1], hsc_gen[g, :resource]],max(hsc_gen[g,:min_op_level],hsc_gen[g,:ramp_up_percentage]))<=0
+        @constraint(SP, cTherH2GenRampUp[h in ConstData.H_ther, t in 2:length(ConstData.T)], 
+                vH2Gen[h,t] .- vH2Gen[h,t-1] .- ConstData.hsc_gen[h, :rep_capacity]*ConstData.hsc_gen[h,:ramp_up_percentage] *(vH2GenOnline[h,t].-vH2GenStart[h,t])
+                .+ ConstData.hsc_gen[h, :rep_capacity]*vH2GenShut[h,t]*ConstData.hsc_gen[h,:min_op_level] .- vH2GenStart[h,t]*ConstData.hsc_gen[h, :rep_capacity]*min(ConstData.hsc_gen_var[ConstData.H_w[w][t], ConstData.hsc_gen[h, :resource]],max(ConstData.hsc_gen[h,:min_op_level],ConstData.hsc_gen[h,:ramp_up_percentage]))<=0
+        )
+
+        @constraint(SP, cTherH2GenRampUpFirst[g in ConstData.H_ther], 
+                vH2Gen[g,1] .- vH2GenFirst[g] .- ConstData.hsc_gen[g, :rep_capacity]*ConstData.hsc_gen[g,:ramp_up_percentage] *(vH2GenOnline[g,1].-vH2GenStart[g,1])
+                .- ConstData.hsc_gen[g, :rep_capacity]*vH2GenShut[g,1]*ConstData.hsc_gen[g,:min_op_level] .+ vH2GenStart[g,1]*ConstData.hsc_gen[g, :rep_capacity]*min(ConstData.hsc_gen_var[ConstData.H_w[w][1], ConstData.hsc_gen[g, :resource]],max(ConstData.hsc_gen[g,:min_op_level],ConstData.hsc_gen[g,:ramp_up_percentage]))<=0
         )
             #H2 Storage constraints
-        @constraint(SP_models[w], cH2StoBalance[s in Q, t in 2:length(T)], vH2StoSOC[s,t] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOC[s,t-1] + vH2StoCha[s,t]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,t])
-        @constraint(SP_models[w], cH2StoBalanceFirst[s in Q], vH2StoSOC[s,1] == (1-hsc_gen[s, :etta_self_dis])*vH2StoSOCFirst[s] + vH2StoCha[s,1]*hsc_gen[s,:etta_cha] - (1/hsc_gen[s,:etta_dis])*vH2StoDis[s,1])
-        @constraint(SP_models[w], cH2StoCycle[s in Q], vH2StoSOCFirst[s] == vH2StoSOC[s,168])
-        @constraint(SP_models[w], cMaxH2StoSOC[s in Q, t in T], vH2StoSOC[s,t] .- hsc_gen[s,:h2stor_max_level]*eAvailH2StoCap[s]<= 0)
-        @constraint(SP_models[w], cMinH2StoSOC[s in Q, t in T], hsc_gen[s,:h2stor_min_level]*eAvailH2StoCap[s] .- vH2StoSOC[s,t]<= 0 )
-        @constraint(SP_models[w], cMaxH2StoDis[s in Q, t in 2:length(T)], vH2StoDis[s,t] .- hsc_gen[s,:etta_dis]*vH2StoSOC[s,t-1]<= 0)
-        @constraint(SP_models[w], cMaxH2StoChar[s in Q,t in T], vH2StoCha[s,t] .- eAvailH2StoCompCap[s] <= 0)
+        @constraint(SP, cH2StoBalance[s in ConstData.Q, t in 2:length(ConstData.T)], vH2StoSOC[s,t] == (1-ConstData.hsc_gen[s, :etta_self_dis])*vH2StoSOC[s,t-1] + vH2StoCha[s,t]*ConstData.hsc_gen[s,:etta_cha] - (1/ConstData.hsc_gen[s,:etta_dis])*vH2StoDis[s,t])
+        @constraint(SP, cH2StoBalanceFirst[s in ConstData.Q], vH2StoSOC[s,1] == (1-ConstData.hsc_gen[s, :etta_self_dis])*vH2StoSOCFirst[s] + vH2StoCha[s,1]*ConstData.hsc_gen[s,:etta_cha] - (1/ConstData.hsc_gen[s,:etta_dis])*vH2StoDis[s,1])
+        @constraint(SP, cH2StoCycle[s in ConstData.Q], vH2StoSOCFirst[s] == vH2StoSOC[s,168])
+        @constraint(SP, cMaxH2StoSOC[s in ConstData.Q, t in ConstData.T], vH2StoSOC[s,t] .- ConstData.hsc_gen[s,:h2stor_max_level]*eAvailH2StoCap[s]<= 0)
+        @constraint(SP, cMinH2StoSOC[s in ConstData.Q, t in ConstData.T], ConstData.hsc_gen[s,:h2stor_min_level]*eAvailH2StoCap[s] .- vH2StoSOC[s,t]<= 0 )
+        @constraint(SP, cMaxH2StoDis[s in ConstData.Q, t in 2:length(ConstData.T)], vH2StoDis[s,t] .- ConstData.hsc_gen[s,:etta_dis]*vH2StoSOC[s,t-1]<= 0)
+        @constraint(SP, cMaxH2StoChar[s in ConstData.Q,t in ConstData.T], vH2StoCha[s,t] .- eAvailH2StoCompCap[s] <= 0)
             
             # H2 Transmission constraints
-        @constraints(SP_models[w], begin 
-            cMaxH2PipeFlowOut[i in I, t in T], vH2FlowPos[i,t] .- eAvailH2Pipe[i]*hsc_pipelines[i, :max_op_level] <= 0
-            cMaxH2PipeFlowIn[i in I, t in T],  vH2FlowNeg[i,t] .- eAvailH2Pipe[i]*hsc_pipelines[i, :max_op_level] <= 0
+        @constraints(SP, begin 
+            cMaxH2PipeFlowOut[i in ConstData.I, t in ConstData.T], vH2FlowPos[i,t] .- eAvailH2Pipe[i]*ConstData.hsc_pipelines[i, :max_op_level] <= 0
+            cMaxH2PipeFlowIn[i in ConstData.I, t in ConstData.T],  vH2FlowNeg[i,t] .- eAvailH2Pipe[i]*ConstData.hsc_pipelines[i, :max_op_level] <= 0
         end)    
-        @constraints(SP_models[w], begin
-                cMaxH2PipeFlowOutComp[i in I,t in T], vH2FlowPos[i,t] .- eAvailH2PipeCompCap[i] <= 0
-                cMaxH2PipeFlowInComp[i in I, t in T], vH2FlowNeg[i,t] .- eAvailH2PipeCompCap[i] <= 0
+        @constraints(SP, begin
+                cMaxH2PipeFlowOutComp[i in ConstData.I,t in ConstData.T], vH2FlowPos[i,t] .- eAvailH2PipeCompCap[i] <= 0
+                cMaxH2PipeFlowInComp[i in ConstData.I, t in ConstData.T], vH2FlowNeg[i,t] .- eAvailH2PipeCompCap[i] <= 0
         end) 
             # Policy constraints
-            #@constraint(SP_models[w], cPowNSD[z in Z, t in T], vPowNSD[z,t] .- zones[z, :pow_nsd_share]*pow_D[t,z] <= 0 )
-            #@constraint(SP_models[w], cH2NSD[z in Z, t in T], vH2NSD[z,t] .- zones[z, :hsc_nsd_share]*H2_D[w, t,z] <= 0)
+            #@constraint(SP, cPowNSD[z in Z, t in T], vPowNSD[z,t] .- zones[z, :pow_nsd_share]*pow_D[t,z] <= 0 )
+            #@constraint(SP, cH2NSD[z in Z, t in T], vH2NSD[z,t] .- zones[z, :hsc_nsd_share]*H2_D[w, t,z] <= 0)
             #Emission constraint
-        @constraint(SP_models[w], cEmissionCapByWeek, eEmissionByWeek .- vExtraEmission .- eMaxEmissionByWeek<= 0)
-
-
-        cc = coupling[w]
+        @constraint(SP, cEmissionCapByWeek, eEmissionByWeek .- vExtraEmission .- eMaxEmissionByWeek<= 0)
 
         # Fix available capacities for week w to the values from MP's current solution
-        availPowGenCap   = SP_models[w][:eAvailPowGenCap] 
-        availPowGenUnit = SP_models[w][:eAvailPowGenUnit]
-        availPowStoCap   = SP_models[w][:eAvailPowStoCap]
-        availPowTraCap   = SP_models[w][:eAvailPowTraCap]
-        availH2GenCap    = SP_models[w][:eAvailH2GenCap]
-        availH2GenUnit  = SP_models[w][:eAvailH2GenUnit]
-        availH2StoCap    = SP_models[w][:eAvailH2StoCap]
-        availH2Pipe      = SP_models[w][:eAvailH2Pipe]
-        availH2PipeCompCap = SP_models[w][:eAvailH2PipeCompCap]
-        availH2StoCompCap = SP_models[w][:eAvailH2StoCompCap]
-        availeEmissionMaxByWeek = SP_models[w][:eMaxEmissionByWeek]
+        availPowGenCap   = SP[:eAvailPowGenCap] 
+        availPowGenUnit = SP[:eAvailPowGenUnit]
+        availPowStoCap   = SP[:eAvailPowStoCap]
+        availPowTraCap   = SP[:eAvailPowTraCap]
+        availH2GenCap    = SP[:eAvailH2GenCap]
+        availH2GenUnit  = SP[:eAvailH2GenUnit]
+        availH2StoCap    = SP[:eAvailH2StoCap]
+        availH2Pipe      = SP[:eAvailH2Pipe]
+        availH2PipeCompCap = SP[:eAvailH2PipeCompCap]
+        availH2StoCompCap = SP[:eAvailH2StoCompCap]
+        availeEmissionMaxByWeek = SP[:eMaxEmissionByWeek]
             
-        cAvailPowGenCap = @constraint(SP_models[w], [g in G], availPowGenCap[g] == ConstData.pow_gen[g, :existing_cap] + ConstData.pow_gen[g, :rep_capacity]*(MP_vals.vNewPowGenCap_val[g]-MP_vals.vRetPowGenCap_val[g]))
-        cAvailPowGenUnit = @constraint(SP_models[w], [g in G_ther], availPowGenUnit[g] == ConstData.pow_gen[g,:num_units] + (MP_vals.vNewPowGenCap_val[g] - MP_vals.vRetPowGenCap_val[g]))
-        cAvailPowStoCap = @constraint(SP_models[w], [s in S], availPowStoCap[s] == ConstData.pow_gen[s, :existing_cap] + ConstData.pow_gen[s, :rep_capacity]*(MP_vals.vNewPowStoCap_val[s] - MP_vals.vRetPowStoCap_val[s]))
-        cAvailPowTraCap = @constraint(SP_models[w], [l in L], availPowTraCap[l] == MP_vals.vNewPowTraCap_val[l] + ConstData.pow_lines[l, :existing_transmission_cap_mw] )
-        cAvailH2GenCap = @constraint(SP_models[w], [h in H_dis], availH2GenCap[h] == ConstData.hsc_gen[h, :existing_cap_tonne_p_hr] + ConstData.hsc_gen[h, :rep_capacity]*(MP_vals.vNewH2GenCap_val[h] - MP_vals.vRetH2GenCap_val[h]))
-        cAvailH2GenUnit = @constraint(SP_models[w], [h in H_ther], availH2GenUnit[h] == ConstData.hsc_gen[h,:num_units] + (MP_vals.vNewH2GenCap_val[h] - MP_vals.vRetH2GenCap_val[h]))
-        cAvailH2StoCap = @constraint(SP_models[w], [s in Q], availH2StoCap[s] == ConstData.hsc_gen[s, :existing_cap_tonne] + (MP_vals.vNewH2StoCap_val[s] - MP_vals.vRetH2StoCap_val[s]))
-        cAvailH2Pipe = @constraint(SP_models[w], [i in I], availH2Pipe[i] == MP_vals.vNewH2Pipe_val[i] + ConstData.hsc_pipelines[i, :existing_num_pipes])
-        cAvailH2PipeCompCap = @constraint(SP_models[w], [i in I], availH2PipeCompCap[i] == MP_vals.vNewH2PipeCompCap_val[i] + ConstData.hsc_pipelines[i, :existing_comp_cap_tonne_hr])
-        cAvailH2StoCompCap = @constraint(SP_models[w], [s in Q], availH2StoCompCap[s] == ConstData.hsc_gen[s, :existing_cap_comp_tonne_hr] + (MP_vals.vNewH2StoCompCap_val[s] - MP_vals.vRetH2StoCompCap_val[s]))
-        cEmission = @constraint(SP_models[w], availeEmissionMaxByWeek == MP_vals.vMaxEmissionByWeek_val[w])
+        cAvailPowGenCap = @constraint(SP, [g in ConstData.G], availPowGenCap[g] == ConstData.pow_gen[g, :existing_cap] + ConstData.pow_gen[g, :rep_capacity]*(MP_vals.vNewPowGenCap_val[g]-MP_vals.vRetPowGenCap_val[g]))
+        cAvailPowGenUnit = @constraint(SP, [g in ConstData.G_ther], availPowGenUnit[g] == ConstData.pow_gen[g,:num_units] + (MP_vals.vNewPowGenCap_val[g] - MP_vals.vRetPowGenCap_val[g]))
+        cAvailPowStoCap = @constraint(SP, [s in ConstData.S], availPowStoCap[s] == ConstData.pow_gen[s, :existing_cap] + ConstData.pow_gen[s, :rep_capacity]*(MP_vals.vNewPowStoCap_val[s] - MP_vals.vRetPowStoCap_val[s]))
+        cAvailPowTraCap = @constraint(SP, [l in ConstData.L], availPowTraCap[l] == MP_vals.vNewPowTraCap_val[l] + ConstData.pow_lines[l, :existing_transmission_cap_mw] )
+        cAvailH2GenCap = @constraint(SP, [h in ConstData.H], availH2GenCap[h] == ConstData.hsc_gen[h, :existing_cap_tonne_p_hr] + ConstData.hsc_gen[h, :rep_capacity]*(MP_vals.vNewH2GenCap_val[h] - MP_vals.vRetH2GenCap_val[h]))
+        cAvailH2GenUnit = @constraint(SP, [h in ConstData.H_ther], availH2GenUnit[h] == ConstData.hsc_gen[h,:num_units] + (MP_vals.vNewH2GenCap_val[h] - MP_vals.vRetH2GenCap_val[h]))
+        cAvailH2StoCap = @constraint(SP, [s in ConstData.Q], availH2StoCap[s] == ConstData.hsc_gen[s, :existing_cap_tonne] + (MP_vals.vNewH2StoCap_val[s] - MP_vals.vRetH2StoCap_val[s]))
+        cAvailH2Pipe = @constraint(SP, [i in ConstData.I], availH2Pipe[i] == MP_vals.vNewH2Pipe_val[i] + ConstData.hsc_pipelines[i, :existing_num_pipes])
+        cAvailH2PipeCompCap = @constraint(SP, [i in ConstData.I], availH2PipeCompCap[i] == MP_vals.vNewH2PipeCompCap_val[i] + ConstData.hsc_pipelines[i, :existing_comp_cap_tonne_hr])
+        cAvailH2StoCompCap = @constraint(SP, [s in ConstData.Q], availH2StoCompCap[s] == ConstData.hsc_gen[s, :existing_cap_comp_tonne_hr] + (MP_vals.vNewH2StoCompCap_val[s] - MP_vals.vRetH2StoCompCap_val[s]))
+        cEmission = @constraint(SP, availeEmissionMaxByWeek == MP_vals.vMaxEmissionByWeek_val[w])
 
-        optimize!(SP_models[w])
+        optimize!(SP)
 
-        cc[:gencap]    = Dict(g => cAvailPowGenCap[g]    for g in G)
-        cc[:genunit]   = Dict(g => cAvailPowGenUnit[g]   for g in G_ther)
-        cc[:stocap]    = Dict(s => cAvailPowStoCap[s]    for s in S)
-        cc[:tracap]    = Dict(l => cAvailPowTraCap[l]    for l in L)
-        cc[:h2gen]     = Dict(h => cAvailH2GenCap[h]     for h in H_dis)
-        cc[:h2genunit] = Dict(h => cAvailH2GenUnit[h]   for h in H_ther)
-        cc[:h2stocap]  = Dict(s => cAvailH2StoCap[s]    for s in Q)
-        cc[:h2pipe]    = Dict(i => cAvailH2Pipe[i]      for i in I)
-        cc[:h2pipecomp]= Dict(i => cAvailH2PipeCompCap[i] for i in I)
-        cc[:h2stocomp] = Dict(s => cAvailH2StoCompCap[s] for s in Q)
+        Coupling_C = Dict{Symbol,Vector{ConstraintRef}}(
+            :gencap     => [cAvailPowGenCap[g]    for g in ConstData.G],
+            :genunit    => [cAvailPowGenUnit[g]   for g in ConstData.G_ther],
+            :stocap     => [cAvailPowStoCap[s]    for s in ConstData.S],
+            :tracap     => [cAvailPowTraCap[l]    for l in ConstData.L],
+            :h2gen      => [cAvailH2GenCap[h]     for h in ConstData.H_dis],
+            :h2genunit  => [cAvailH2GenUnit[h]    for h in ConstData.H_ther],
+            :h2stocap   => [cAvailH2StoCap[s]     for s in ConstData.Q],
+            :h2pipe     => [cAvailH2Pipe[i]       for i in ConstData.I],
+            :h2pipecomp => [cAvailH2PipeCompCap[i] for i in ConstData.I],
+            :h2stocomp  => [cAvailH2StoCompCap[s]  for s in ConstData.Q],
+            :emission   => [cEmission], 
+        )
+        
+        #=
+        cc = ConstData.coupling[w]
+        cc[:gencap]    = Dict(g => cAvailPowGenCap[g]    for g in ConstData.G)
+        cc[:genunit]   = Dict(g => cAvailPowGenUnit[g]   for g in ConstData.G_ther)
+        cc[:stocap]    = Dict(s => cAvailPowStoCap[s]    for s in ConstData.S)
+        cc[:tracap]    = Dict(l => cAvailPowTraCap[l]    for l in ConstData.L)
+        cc[:h2gen]     = Dict(h => cAvailH2GenCap[h]     for h in ConstData.H_dis)
+        cc[:h2genunit] = Dict(h => cAvailH2GenUnit[h]   for h in ConstData.H_ther)
+        cc[:h2stocap]  = Dict(s => cAvailH2StoCap[s]    for s in ConstData.Q)
+        cc[:h2pipe]    = Dict(i => cAvailH2Pipe[i]      for i in ConstData.I)
+        cc[:h2pipecomp]= Dict(i => cAvailH2PipeCompCap[i] for i in ConstData.I)
+        cc[:h2stocomp] = Dict(s => cAvailH2StoCompCap[s] for s in ConstData.Q)
         cc[:emission]  = cEmission
+        =#
+        
 
-        sum_dual_gencap = sum(dual(coupling[w][:gencap][g])*pow_gen[g, :rep_capacity]*(vNewPowGenCap[g] - vRetPowGenCap[g] - MP_vals.vNewPowGenCap_val[g] + MP_vals.vRetPowGenCap_val[g]) for g in G_ren; init=0.0)
-        sum_dual_genunit = sum(dual(coupling[w][:genunit][g])*(vNewPowGenCap[g] - vRetPowGenCap[g] - MP_vals.vNewPowGenCap_val[g] + MP_vals.vRetPowGenCap_val[g]) for g in G_ther; init=0.0)
-        sum_dual_stocap = sum(dual(coupling[w][:stocap][s])*pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] - vRetPowStoCap[s] - MP_vals.vNewPowStoCap_val[s] + MP_vals.vRetPowStoCap_val[s]) for s in S; init=0.0)
-        sum_dual_tracap = sum(dual(coupling[w][:tracap][l])*(vNewPowTraCap[l] - MP_vals.vNewPowTraCap_val[l]) for l in L; init=0.0)
-        sum_dual_h2gen = sum(dual(coupling[w][:h2gen][h])*hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h]-vRetH2GenCap[h] - MP_vals.vNewH2GenCap_val[h] + MP_vals.vRetH2GenCap_val[h]) for h in H_dis; init=0.0)
-        sum_dual_h2genunit = sum(dual(coupling[w][:h2genunit][h])*(vNewH2GenCap[h]-vRetH2GenCap[h] - MP_vals.vNewH2GenCap_val[h] + MP_vals.vRetH2GenCap_val[h]) for h in H_ther; init=0.0)
-        sum_dual_h2stocap = sum(dual(coupling[w][:h2stocap][s])*(vNewH2StoCap[s]-vRetH2StoCap[s] - MP_vals.vNewH2StoCap_val[s] + MP_vals.vRetH2StoCap_val[s]) for s in Q; init=0.0)
-        sum_dual_h2pipe = sum(dual(coupling[w][:h2pipe][i])*(vNewH2Pipe[i]-vRetH2Pipe[i] - MP_vals.vNewH2Pipe_val[i] + MP_vals.vRetH2Pipe_val[i]) for i in I; init=0.0)
-        sum_dual_h2pipecomp = sum(dual(coupling[w][:h2pipecomp][i])*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - MP_vals.vNewH2PipeCompCap_val[i] + MP_vals.vRetH2PipeCompCap_val[i]) for i in I; init=0.0)
-        sum_dual_h2stocomp = sum(dual(coupling[w][:h2stocomp][s])*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - MP_vals.vNewH2StoCompCap_val[s] + MP_vals.vRetH2StoCompCap_val[s]) for s in Q; init=0.0)
-        dual_constraint = dual(coupling[w][:emission])*(vMaxEmissionByWeek[w] - MP_vals.vMaxEmissionByWeek_val[w]; init=0.0)
-
+        duals = Dict(
+            :gencap    => Dict(g => dual(cAvailPowGenCap[g]) for g in ConstData.G),
+            :genunit   => Dict(g => dual(cAvailPowGenUnit[g])    for g in ConstData.G_ther),
+            :stocap    => Dict(s => dual(cAvailPowStoCap[s]) for s in ConstData.S),
+            :tracap    => Dict(l => dual(cAvailPowTraCap[l]) for l in ConstData.L),
+            :h2gen     => Dict(h => dual(cAvailH2GenCap[h]) for h in ConstData.H),
+            :h2genunit => Dict(h => dual(cAvailH2GenUnit[h]) for h in ConstData.H_ther),
+            :h2stocap  => Dict(s => dual(cAvailH2StoCap[s])    for s in ConstData.Q),
+            :h2pipe    => Dict(i => dual(cAvailH2Pipe[i])      for i in ConstData.I),
+            :h2pipecomp => Dict(i => dual(cAvailH2PipeCompCap[i]) for i in ConstData.I),
+            :h2stocomp => Dict(s => dual(cAvailH2StoCompCap[s]) for s in ConstData.Q),
+            :emission  => dual(cEmission)
+        )
+        #=
+        sum_dual_gencap = sum(dual(ConstData.coupling[w][:gencap][g])*ConstData.pow_gen[g, :rep_capacity]*(vNewPowGenCap[g] - vRetPowGenCap[g] - MP_vals.vNewPowGenCap_val[g] + MP_vals.vRetPowGenCap_val[g]) for g in ConstData.G_ren; init=0.0)
+        sum_dual_genunit = sum(dual(ConstData.coupling[w][:genunit][g])*(vNewPowGenCap[g] - vRetPowGenCap[g] - MP_vals.vNewPowGenCap_val[g] + MP_vals.vRetPowGenCap_val[g]) for g in ConstData.G_ther; init=0.0)
+        sum_dual_stocap = sum(dual(ConstData.coupling[w][:stocap][s])*ConstData.pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] - vRetPowStoCap[s] - MP_vals.vNewPowStoCap_val[s] + MP_vals.vRetPowStoCap_val[s]) for s in ConstData.S; init=0.0)
+        sum_dual_tracap = sum(dual(ConstData.coupling[w][:tracap][l])*(vNewPowTraCap[l] - MP_vals.vNewPowTraCap_val[l]) for l in ConstData.L; init=0.0)
+        sum_dual_h2gen = sum(dual(ConstData.coupling[w][:h2gen][h])*ConstData.hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h]-vRetH2GenCap[h] - MP_vals.vNewH2GenCap_val[h] + MP_vals.vRetH2GenCap_val[h]) for h in H_dis; init=0.0)
+        sum_dual_h2genunit = sum(dual(ConstData.coupling[w][:h2genunit][h])*(vNewH2GenCap[h]-vRetH2GenCap[h] - MP_vals.vNewH2GenCap_val[h] + MP_vals.vRetH2GenCap_val[h]) for h in ConstData.H_ther; init=0.0)
+        sum_dual_h2stocap = sum(dual(ConstData.coupling[w][:h2stocap][s])*(vNewH2StoCap[s]-vRetH2StoCap[s] - MP_vals.vNewH2StoCap_val[s] + MP_vals.vRetH2StoCap_val[s]) for s in ConstData.Q; init=0.0)
+        sum_dual_h2pipe = sum(dual(ConstData.coupling[w][:h2pipe][i])*(vNewH2Pipe[i]-vRetH2Pipe[i] - MP_vals.vNewH2Pipe_val[i] + MP_vals.vRetH2Pipe_val[i]) for i in ConstData.I; init=0.0)
+        sum_dual_h2pipecomp = sum(dual(ConstData.coupling[w][:h2pipecomp][i])*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - MP_vals.vNewH2PipeCompCap_val[i] + MP_vals.vRetH2PipeCompCap_val[i]) for i in ConstData.I; init=0.0)
+        sum_dual_h2stocomp = sum(dual(ConstData.coupling[w][:h2stocomp][s])*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - MP_vals.vNewH2StoCompCap_val[s] + MP_vals.vRetH2StoCompCap_val[s]) for s in ConstData.Q; init=0.0)
+        dual_constraint = dual(ConstData.coupling[w][:emission])*(vMaxEmissionByWeek[w] - MP_vals.vMaxEmissionByWeek_val[w]; init=0.0)
+        =#
         return (w = w,
-        sum_dual_gencap,
-        sum_dual_genunit,
-        sum_dual_stocap,
-        sum_dual_tracap,
-        sum_dual_h2gen,
-        sum_dual_h2genunit,
-        sum_dual_h2stocap,
-        sum_dual_h2pipe,
-        sum_dual_h2pipecomp,
-        sum_dual_h2stocomp,
-        dual_constraint,
-        sp_obj = objective_value(SP_models[w]))
+        duals = duals,
+        sp_obj = objective_value(SP),
+        Coupling_C = Coupling_C)
     end
 
     #Defining the Master Problem
@@ -560,7 +567,7 @@ tolerence = 1e-3
     #Land Use Constraint on each zone
     @constraint(MP, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
     #Policy
-    @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
+    @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*sum((h2_demand[w][t,z]*33.3) + pow_demand[w][t,z] for t in T, w in W, z in Z))
     
 
     # Defining the Sub Problem
@@ -639,37 +646,61 @@ tolerence = 1e-3
             pow_lines = pow_lines,
             hsc_pipelines = hsc_pipelines,
             zones = zones,
+            Pow_Network = Pow_Network,
+            H2_Network = H2_Network,
+            pow_gen_var = pow_gen_var,
+            hsc_gen_var = hsc_gen_var,
+            H_w = H_w,
             T = T,
             W = W,
             G = G,
+            G_ren = G_ren,
+            G_ther = G_ther,
             S = S,
             L = L,
+            H = H,
             H_dis = H_dis,
             H_ther = H_ther,
             Q = Q,
-            I = I
+            I = I,
+            Z = Z,
+            h2_demand = h2_demand,
+            pow_demand = pow_demand,
+            CO2_content = CO2_content,
+            fuel_costs = fuel_costs,
+            coupling = coupling
         )
 
         results = pmap(
-        w -> solve_week!(w, MP_vals, ConstData),
-        W;
-        batch_size = nworkers()
+            w -> solve_week!(w, MP_vals, ConstData),
+            W;
+            batch_size = nworkers()
+            
         )
+        for r in results
+            coupling[r.w] = r.Coupling_C
+        end
         total_sp_cost = sum(r.sp_obj for r in results)
         invest_cost  = value(MP_obj)
         UB_candidate = invest_cost + total_sp_cost
         global UB = min(UB, UB_candidate)
         println(" → Total SP cost = ", round(total_sp_cost,  digits=2))
         println(" → Candidate UB   = ", round(UB_candidate, digits=2), " (Best UB = ",    round(UB,           digits=2), ")")
+
         for r in results
             @constraint(MP,
-            theta[r.w] >= r.sp_obj + r.sum_dual_gencap + r.sum_dual_genunit + 
-                                    r.sum_dual_stocap + r.sum_dual_tracap + 
-                                    r.sum_dual_h2gen + r.sum_dual_h2genunit + 
-                                    r.sum_dual_h2stocap + r.sum_dual_h2pipe +
-                                    r.sum_dual_h2pipecomp + r.sum_dual_h2stocomp + 
-                                    r.dual_constraint
-            )
+            theta[r.w] >= r.sp_obj + 
+            sum(r.duals[:gencap][g]*ConstData.pow_gen[g, :rep_capacity]*(vNewPowGenCap[g] - vRetPowGenCap[g] - MP_vals.vNewPowGenCap_val[g] + MP_vals.vRetPowGenCap_val[g]) for g in ConstData.G_ren; init=0.0) +
+            sum(r.duals[:genunit][g]*(vNewPowGenCap[g] - vRetPowGenCap[g] - MP_vals.vNewPowGenCap_val[g] + MP_vals.vRetPowGenCap_val[g]) for g in ConstData.G_ther; init=0.0)+ 
+            sum(r.duals[:stocap][s]*ConstData.pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] - vRetPowStoCap[s] - MP_vals.vNewPowStoCap_val[s] + MP_vals.vRetPowStoCap_val[s]) for s in ConstData.S; init=0.0)+
+            sum(r.duals[:tracap][l]*(vNewPowTraCap[l] - MP_vals.vNewPowTraCap_val[l]) for l in ConstData.L; init=0.0)+
+            sum(r.duals[:h2gen][h]*ConstData.hsc_gen[h, :rep_capacity]*(vNewH2GenCap[h]-vRetH2GenCap[h] - MP_vals.vNewH2GenCap_val[h] + MP_vals.vRetH2GenCap_val[h]) for h in H_dis; init=0.0)+
+            sum(r.duals[:h2genunit][h]*(vNewH2GenCap[h]-vRetH2GenCap[h] - MP_vals.vNewH2GenCap_val[h] + MP_vals.vRetH2GenCap_val[h]) for h in ConstData.H_ther; init=0.0) +
+            sum(r.duals[:h2stocap][s]*(vNewH2StoCap[s]-vRetH2StoCap[s] - MP_vals.vNewH2StoCap_val[s] + MP_vals.vRetH2StoCap_val[s]) for s in ConstData.Q; init=0.0) + 
+            sum(r.duals[:h2pipe][i]*(vNewH2Pipe[i]-vRetH2Pipe[i] - MP_vals.vNewH2Pipe_val[i] + MP_vals.vRetH2Pipe_val[i]) for i in ConstData.I; init=0.0)+
+            sum(r.duals[:h2pipecomp][i]*(vNewH2PipeCompCap[i]-vRetH2PipeCompCap[i] - MP_vals.vNewH2PipeCompCap_val[i] + MP_vals.vRetH2PipeCompCap_val[i]) for i in ConstData.I; init=0.0)+
+            sum(r.duals[:h2stocomp][s]*(vNewH2StoCompCap[s]-vRetH2StoCompCap[s] - MP_vals.vNewH2StoCompCap_val[s] + MP_vals.vRetH2StoCompCap_val[s]) for s in ConstData.Q; init=0.0)+
+            r.duals[:emission]*(vMaxEmissionByWeek[r.w] - MP_vals.vMaxEmissionByWeek_val[r.w]; init=0.0))
         end
         
         optimize!(MP)
@@ -700,7 +731,7 @@ tolerence = 1e-3
         if (UB - LB)/abs(LB) <= tolerence
             println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
             for w in W
-                sp = SP_models[w]
+                sp = SP
                 for z in Z, t in T
                     PowNSD_vals[(z, w, t)] = value(sp[:vPowNSD][z, t])
                     H2NSD_vals[(z, w, t)]  = value(sp[:vH2NSD][z, t])
@@ -734,41 +765,6 @@ tolerence = 1e-3
             break
         end
         k += 1
-
-
-        for w in W
-            for g in G
-                set_normalized_rhs(coupling[w][:gencap][g], value(eTotPowGenCap[g]))
-            end
-            for g in G_ther
-                set_normalized_rhs(coupling[w][:genunit][g], pow_gen[g,:num_units] + (value(vNewPowGenCap[g]) - value(vRetPowGenCap[g])))
-            end
-            for s in S
-                set_normalized_rhs(coupling[w][:stocap][s], value(eTotPowStoCap[s]))
-            end
-            for l in L
-                set_normalized_rhs(coupling[w][:tracap][l], value(vNewPowTraCap[l]) + pow_lines[l, :existing_transmission_cap_mw])
-            end
-            for h in H_dis
-                set_normalized_rhs(coupling[w][:h2gen][h], value(eTotH2GenCap[h]))
-            end
-            for h in H_ther
-                set_normalized_rhs(coupling[w][:h2genunit][h], hsc_gen[h,:num_units] + (value(vNewH2GenCap[h]) - value(vRetH2GenCap[h])))
-            end
-            for s in Q
-                set_normalized_rhs(coupling[w][:h2stocap][s], value(eTotH2StoCap[s]))
-            end
-            for i in I
-                set_normalized_rhs(coupling[w][:h2pipe][i], value(eTotH2Pipe[i]))
-            end
-            for i in I
-                set_normalized_rhs(coupling[w][:h2pipecomp][i], value(eTotH2PipeCompCap[i]))
-            end
-            for s in Q
-                set_normalized_rhs(coupling[w][:h2stocomp][s], value(eTotH2StoCompCap[s]))
-            end
-            set_normalized_rhs(coupling[w][:emission], value(vMaxEmissionByWeek[w]))
-        end
 
 
     end

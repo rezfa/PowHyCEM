@@ -1,4 +1,6 @@
-using JuMP, Gurobi, DataFrames, CSV, Plots
+using JuMP, Gurobi, DataFrames, CSV, Plots, Measures
+
+const SCALE = 1e9 
 
 include("Write_Capacity.jl")
 include("Write_Land_use.jl")
@@ -100,18 +102,25 @@ tolerence = 1e-3
     LB_hist  = Float64[]
     UB_hist  = Float64[]
     gap_hist = Float64[]
+    iter_max = last(iters)
+    tick_step = 1
 
     # Create the empty figure and the three series (legend only here):
-    plt = plot(size=(1000,600),
+    plt = plot(size=(800,480),
            xlabel="Iteration",
-           ylabel="Cost (×10⁶)",
+           ylabel="Cost (billion €)",
+           xticks = (1:tick_step:iter_max),
            legend=:topright,
-           ylim=(0,300))
+           ylim=(0,100),
+           grid=:dot,
+           margin = 8mm,
+           guidefont = font("Times", 11),
+            tickfont  = font("Times", 9),
+            legendfont= font("Times", 9))
 
     # initialize the series (empty for now)
     plot!(plt, iters, LB_hist,  label="LB",  color=:blue)
     plot!(plt, iters, UB_hist,  label="UB",  color=:red)
-    #plot!(plt, iters, gap_hist, label="Gap", color=:green, linestyle=:dash)
 
 
     #Defining the Master Problem
@@ -625,22 +634,8 @@ tolerence = 1e-3
         println(" → Gap = ", round((UB - LB)*100/abs(LB), digits=2),"%")
 
         push!(iters, k)
-        push!(LB_hist, LB  / 1e8)   
-        push!(UB_hist, UB  / 1e8)
-        #push!(gap_hist,(UB - LB) / 1e6)
-
-        # update each curve *without* re-adding legend entries
-        if k % 10 == 0 || (UB - LB)/abs(LB + eps()) <= tolerence
-            # update curves without legends
-            plot!(plt, iters, LB_hist, color=:blue, label=false)
-            plot!(plt, iters, UB_hist, color=:red,  label=false)
-            #plot!(plt, iters, gap_hist,color=:black,label="UB–LB")
-    
-            display(plt)  # redraw large plot
-    
-            println("Iter $k ▶  LB = $(round(LB/1e6, digits=3))e6, UB = $(round(UB/1e6, digits=3))e6, ",
-                    "rel gap = $(round((UB-LB)/abs(LB + eps())*100, digits=3))%")
-        end
+        push!(LB_hist, LB / SCALE)   
+        push!(UB_hist, UB / SCALE)
         
         if (UB - LB)/abs(LB) <= tolerence
             println("Converged (gap = ", UB - LB, "). Optimal investment plan found.")
@@ -718,6 +713,8 @@ tolerence = 1e-3
 
     end
     
+    results_dir = joinpath(datadir, "Results")
+    savefig(plt, joinpath(results_dir, "Convergence_LB_UB.png"))
     println("Done: Iterations = $k, final gap = ", round(UB - LB, digits=4))
     if UB - LB <= tolerence
         println("Optimal objective = ", round(UB, digits=2))
@@ -726,17 +723,17 @@ tolerence = 1e-3
     end
     @assert termination_status(MP) == MOI.OPTIMAL
 
-    write_capacity_files()
-    write_line_capacity_files()
-    write_land_use_data()
-    write_nsd_by_zone(PowNSD_vals, H2NSD_vals, Z, W, T)
-    write_curtailment_by_zone(PowCrt_vals, H2Crt_vals, Z, W, T)
-    write_flows(PowFlow_vals, H2FlowPos_vals, H2FlowNeg_vals, pow_lines, hsc_pipelines, L, I, W, T)
-    write_emissions_detail(SP_models, Z, W)
-    write_storage_profiles(pow_gen, hsc_gen, S, Q, PowStoCha_vals, PowStoDis_vals, PowStoSOC_vals, H2StoCha_vals, H2StoDis_vals, H2StoSOC_vals, W, T)
-    write_generation_profiles(pow_gen, hsc_gen, G, H, PowGen_vals, H2Gen_vals, W, T)
-    write_costs_files(SP_models, pow_gen, hsc_gen, G, S, H, Q, PowGen_vals, PowStoCha_vals, H2Gen_vals, H2StoCha_vals, W, T)
-    write_line_costs_power(pow_lines, L)
-    write_h2_pipe_costs(hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
-    write_LCOH(SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
+    write_capacity_files(datadir)
+    write_line_capacity_files(datadir)
+    write_land_use_data(datadir)
+    write_nsd_by_zone(datadir,PowNSD_vals, H2NSD_vals, Z, W, T)
+    write_curtailment_by_zone(datadir,PowCrt_vals, H2Crt_vals, Z, W, T)
+    write_flows(datadir, PowFlow_vals, H2FlowPos_vals, H2FlowNeg_vals, pow_lines, hsc_pipelines, L, I, W, T)
+    write_emissions_detail(datadir,SP_models, Z, W)
+    write_storage_profiles(datadir,pow_gen, hsc_gen, S, Q, PowStoCha_vals, PowStoDis_vals, PowStoSOC_vals, H2StoCha_vals, H2StoDis_vals, H2StoSOC_vals, W, T)
+    write_generation_profiles(datadir,pow_gen, hsc_gen, G, H, PowGen_vals, H2Gen_vals, W, T)
+    write_costs_files(datadir, SP_models, pow_gen, hsc_gen, G, S, H, Q, PowGen_vals, PowStoCha_vals, H2Gen_vals, H2StoCha_vals, W, T)
+    write_line_costs_power(datadir, pow_lines, L)
+    write_h2_pipe_costs(datadir, hsc_pipelines, I, H2FlowPos_vals, H2FlowNeg_vals, W, T)
+    write_LCOH(datadir,SP_models, hsc_gen, H, Q, H2Gen_vals, H2StoCha_vals, H2FlowPos_vals, H2FlowNeg_vals, W, T, fuel_costs)
 
