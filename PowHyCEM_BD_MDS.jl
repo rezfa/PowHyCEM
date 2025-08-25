@@ -169,11 +169,12 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
     @expression(MP, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + (vNewH2StoCap[s] - vRetH2StoCap[s]))
     @expression(MP, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s])
     @expression(MP, eTotH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + vNewH2Pipe[i] - vRetH2Pipe[i])
-    @expression(MP, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
-    @expression(MP, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
-    @expression(MP, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
-    @expression(MP, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
-    @expression(MP, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :land_use_km2_p_length]*hsc_pipelines[i, :distance]*hsc_pipelines[i, :land_use_km2_p_length]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
+    @expression(MP, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :total_land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
+    @expression(MP, ePowGenLandUseEff[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :direct_land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
+    @expression(MP, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :total_land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
+    @expression(MP, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :total_land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
+    @expression(MP, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])* hsc_gen[s, :total_land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
+    @expression(MP, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :total_land_use_km2_p_length]*hsc_pipelines[i, :distance]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
     @expression(MP, eTotH2PipeCompCap[i in I], hsc_pipelines[i, :existing_comp_cap_tonne_hr] + vNewH2PipeCompCap[i] - vRetH2PipeCompCap[i])
     #Cost Expressions
     @expression(MP, eCostPowGenInv, sum(pow_gen[g, :inv_cost_per_mwyr] .* vNewPowGenCap[g] .* pow_gen[g, :rep_capacity] .+ pow_gen[g, :fom_cost_per_mwyr] .* eTotPowGenCap[g] for g in G))
@@ -190,7 +191,8 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
                                         hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i] + 
                                         hsc_pipelines[i, :fom_comp_p_tonne_hr]*eTotH2PipeCompCap[i] for i in I)
     )
-    @expression(MP, eTotalLandUse[z in Z], sum(ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] for z in Z))
+    @expression(MP, eTotalLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z])
+    @expression(MP, eTotalLandUseEff[z in Z], ePowGenLandUseEff[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z])
     @expression(MP, eCostLandConversion, sum(vLandConversion[z]*zones[z,:land_conversion_cost_p_km2] for z in Z))
 
     # ---- MP Objective ---- # 
@@ -227,7 +229,8 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
     @constraint(MP, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
     #Land Use Constraint on each zone
     @constraint(MP, cLandUse[z in Z], eTotalLandUse[z] .- zones[z, :maximum_available_land]<=0 )
-    @constraint(MP, cLandUseConversion[z in Z], eTotalLandUse[z] - vLandConversion[z] <= zones[z, :available_land])
+    @constraint(MP, cLandUseConversion[z in Z], eTotalLandUseEff[z] - vLandConversion[z] <= zones[z, :available_land])
+    @constraint(MP, cMaxLandConversion[z in Z], vLandConversion[z] <= zones[z, :maximum_available_land]- zones[z, :available_land])
     #Policy
     @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*0.4*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
     #Long-Term-Duration Storage
@@ -299,6 +302,10 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
         @variable(SP_models[w], eH2SOCFirst[s in Q]>=0) # showing the SOC at the beginning of each week for each H2 stoarge
         @variable(SP_models[w], slack_end[s in Q] ≥ 0)
         @variable(SP_models[w], slack_start[s in Q] ≥ 0)
+
+        # Slack_variables for reserve
+        @variable(SP_models[w], vSlackResUp[z in Z, t in T]>=0)
+        @variable(SP_models[w], vSlackResDn[z in Z, t in T]>=0)
         # Variables foe availability of generation, storage and transmission
         @variable(SP_models[w], eAvailPowGenCap[g in G]>=0)
         @variable(SP_models[w], eAvailPowGenUnit[g in G_ther]>=0)
@@ -340,8 +347,8 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
         @expression(SP_models[w], pow_D[t in T, z in Z], pow_demand[w][t,z] .+ ePowDemandHSC[z,t])
         @expression(SP_models[w], H2_D[t in T, z in Z], h2_demand[w][t,z] .+ eH2DemandPow[z,t])
         #Power Generation reserve constraints
-        @expression(SP_models[w], ePowResReqUp[z in Z, t in T], 0.1*eTotPowGenCapByZone[z] )
-        @expression(SP_models[w], ePowResReqDn[z in Z, t in T], 0.05 * eTotPowGenCapByZone[z])
+        @expression(SP_models[w], ePowResReqUp[z in Z, t in T], 0.1*pow_demand[w][t,z] )
+        @expression(SP_models[w], ePowResReqDn[z in Z, t in T], 0.05 * pow_demand[w][t,z])
         # Emission Expressions
         @expression(SP_models[w], eEmissionByWeek, 
             sum(vPowGen[g,t]*pow_gen[g, :heat_rate_mmbtu_per_mwh]*CO2_content[pow_gen[g, :fuel]] for g in G, t in T) + 
@@ -373,9 +380,11 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
         #Emission Cost Expression
         @expression(SP_models[w], eEmissionCost, vExtraEmission * zones[1, :emission_cost] )
         @expression(SP_models[w], SlackCost, sum((slack_end[s]+slack_start[s])*1000000 for s in Q))
+        @expression(SP_models[w], eCostResSlack, sum(vSlackResUp[z,t] * zones[z, :voll_pow] + vSlackResDn[z,t] * zones[z, :voll_pow] for z in Z, t in T))
         # ---- SP_models[w] Objective ---- #  
         
-        @objective(SP_models[w], Min, eCostPowGenVar .+ eCostPowStoVar .+ eCostPowGenStart .+ eCostH2GenVar .+ eCostH2StoVar .+ eCostH2GenStart .+ eCostPowNSD .+ eCostH2NSD .+ eCostPowCrt .+ eCostH2Crt .+ eEmissionCost .+ SlackCost)
+        @objective(SP_models[w], Min, eCostPowGenVar .+ eCostPowStoVar .+ eCostPowGenStart .+ eCostH2GenVar .+ eCostH2StoVar .+ eCostH2GenStart .+ 
+                                    eCostPowNSD .+ eCostH2NSD .+ eCostPowCrt .+ eCostH2Crt .+ eEmissionCost .+ SlackCost .+ eCostResSlack)
 
         # ---- SP Constraints ---- #
         # Power Balance #
@@ -398,8 +407,8 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
         @constraint(SP_models[w], cPowResDnMax[g in G_ther, t in T], vPowResDn[g,t] .+ pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,t] .- vPowGen[g,t] <= 0) 
         @constraint(SP_models[w], cPowResUP[g in G_ther, t in T], vPowResUp[g,t] .- eAvailPowGenCap[g]*pow_gen[g,:ramp_up] <=0)
         @constraint(SP_models[w], cPowResDn[g in G_ther, t in T], vPowResDn[g,t] .- eAvailPowGenCap[g]*pow_gen[g,:ramp_dn] <=0)
-        @constraint(SP_models[w], cPowResReqUp[z in Z, t in T], ePowResReqUp[z,t] .- sum(vPowResUp[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
-        @constraint(SP_models[w], cPowResReqDn[z in Z, t in T], ePowResReqDn[z,t] .- sum(vPowResDn[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
+        @constraint(SP_models[w], cPowResReqUp[z in Z, t in T], ePowResReqUp[z,t] .- sum(vPowResUp[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= vSlackResUp[z,t])
+        @constraint(SP_models[w], cPowResReqDn[z in Z, t in T], ePowResReqDn[z,t] .- sum(vPowResDn[g,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= vSlackResDn[z,t])
         #Cyclic constraint on Thermal power units
         @constraint(SP_models[w], cPowUnitOnlineCon[g in G_ther, t in 2:length(T)], vPowGenOnline[g,t] - vPowGenOnline[g,t-1] == vPowGenStart[g,t]-vPowGenShut[g,t])
         @constraint(SP_models[w], cPowUnitOnlineFirst[g in G_ther], vPowGenOnline[g,1] - vPowGenOnlineFirst[g] == vPowGenStart[g,1]-vPowGenShut[g,1])
@@ -713,7 +722,7 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
                 toggle_integrality!(true)
                 integer_mode = true
                 # use default branch-&-bound options if you like
-                set_optimizer_attribute(MP, "Method", 1)      
+                set_optimizer_attribute(MP, "Method", 2)      
                 set_optimizer_attribute(MP, "Crossover", 0)
                 optimize!(MP)
             end

@@ -1,3 +1,2 @@
-Network_zones,Network_Lines,z1,z2,z3,transmission_path_name,distance_Km,Line_Loss_Percentage,Line_Max_Reinforcement_MW,Line_Reinforcement_Cost_per_MWyr,Existing_Transmission_Cap_MW
-z1,1,-1,1,0,off_north_to_Groningen,142,0.00923,20000,3455144,700
-z2,2,-1,0,1,Groningen_to_Fryslan,42,0.00273,20000,3127908,3950
+Network_zones,Network_Lines,z1,z2,transmission_path_name,distance_Km,Line_Loss_Percentage,Line_Max_Reinforcement_MW,Line_Reinforcement_Cost_per_MWyr,Existing_Transmission_Cap_MW
+z2,1,-1,1,Groningen_to_Fryslan,42,0.00273,20000,3127908,3950
