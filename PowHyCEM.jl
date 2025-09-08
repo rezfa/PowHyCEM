@@ -169,6 +169,10 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 @variable(CEM, vH2StoSOCFirst[s in Q, w in W]>=0)
 @variable(CEM, vH2StoSOCLast[s in Q, w in W]>=0)
 
+#slack variables for reserve
+@variable(CEM, vSlackResUp[z in Z, w in W, t in T] >= 0)
+@variable(CEM, vSlackResDn[z in Z, w in W, t in T] >= 0)
+
 ###################
 ### Expressions ###
 ###################
@@ -186,13 +190,13 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 @expression(CEM, ePowGenByZone[z in Z, w in W, t in T], sum(vPowGen[g,w,t] * (pow_gen[g, :zone] == z ? 1 : 0) for g in G))
 @expression(CEM, eTotPowGenCapByZone[z in Z], sum(eTotPowGenCap[g]*(pow_gen[g,:zone] == z ? 1 : 0) for g in G_ther))
 #@expression(CEM, ePowGenEmiByZone[z in Z], sum(CO2_content[pow_gen[g, :fuel]] * pow_gen[g,:heat_rate_mmbtu_per_yr]*vPowGen[g,w,t]*(pow_gen[g, :zone]==z ? 1 : 0) for g in G_ther, w in W, t in T))
-@expression(CEM, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
+@expression(CEM, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :total_land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
 
 # Power Storage Expressions #
 @expression(CEM, eTotPowStoCap[s in S], dfStor[dfStor.r_id .==s, :existing_cap] .+ pow_gen[s, :rep_capacity]*(vNewPowStoCap[s] .- vRetPowStoCap[s]))
 @expression(CEM, ePowStoChaByZone[z in Z, w in W, t in T], sum(vPowStoCha[s,w,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
 @expression(CEM, ePowStoDisByZone[z in Z, w in W, t in T], sum(vPowStoDis[s,w,t] * (pow_gen[s, :zone] == z ? 1 : 0) for s in S))
-@expression(CEM, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
+@expression(CEM, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :total_land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
 
 # Power Transmission Expressions #
 @expression(CEM, eTotPowTraCap[l in L], pow_lines[l, :existing_transmission_cap_mw] .+ vNewPowTraCap[l]) #No retired cap considered for transmission lines + Not var cost for power flows - Rep Cap is cosidered 1
@@ -210,12 +214,12 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 #@expression(CEM, eRepH2GenCap[h in H_ther], hsc_gen[h, :existing_cap_tonne_p_hr]/hsc_gen[h, :num_units])
 @expression(CEM, eH2GenEvap[h in H, w in W, t in T], hsc_gen[h, :boil_off]*vH2Gen[h,w,t])
 #@expression(CEM, eH2GenEmiByZone[z in Z], sum(CO2_content[hsc_gen[h, :fuel]] * hsc_gen[h,:heat_rate_mmbtu_p_tonne]*vH2Gen[h,w,t]*(1-hsc_gen[h,:ccs_rate])*(hsc_gen[h, :zone]==z ? 1 : 0) for h in H_ther, w in W,t in T))
-@expression(CEM, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
+@expression(CEM, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :total_land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
 
 # HSC Storage Expression
 @expression(CEM, eTotH2StoCap[s in Q], hsc_gen[s, :existing_cap_tonne] + (vNewH2StoCap[s] - vRetH2StoCap[s]))
 @expression(CEM, eTotH2StoCompCap[s in Q], hsc_gen[s, :existing_cap_comp_tonne_hr] + vNewH2StoCompCap[s] - vRetH2StoCompCap[s]) #rep cap is considered 1
-@expression(CEM, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])* hsc_gen[s, :land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
+@expression(CEM, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])* hsc_gen[s, :total_land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
 
 # HSC Tramsmission Expression
 @expression(CEM, eH2FlowNet[i in I, w in W, t in T], vH2FlowPos[i,w,t] - vH2FlowNeg[i,w,t]) #Net flow of H2 in the network
@@ -223,7 +227,7 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 @expression(CEM, eNet_H2_Flow[z in Z,w in W, t in T], sum(H2_Network[i,z] * eH2FlowNet[i,w,t] for i in I))
 @expression(CEM, eH2_Loss_By_Zone[z in Z, w in W, t in T], sum(abs(H2_Network[i,z]) * (1/2) *eH2FlowNet[i,w,t] * hsc_pipelines[i, :pipe_loss_coeff] for i in I ))
 @expression(CEM, eTotH2PipeCompCap[i in I], hsc_pipelines[i, :existing_comp_cap_tonne_hr] + vNewH2PipeCompCap[i] - vRetH2PipeCompCap[i])
-@expression(CEM, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :land_use_km2_p_length]*hsc_pipelines[i, :distance]*hsc_pipelines[i, :land_use_km2_p_length]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
+@expression(CEM, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :total_land_use_km2_p_length]*hsc_pipelines[i, :distance]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
 
 # HSC Cost Expressions
 @expression(CEM, eCostH2GenInv, sum(hsc_gen[h, :inv_cost_tonne_hr_p_yr]*vNewH2GenCap[h]*hsc_gen[h, :rep_capacity] + hsc_gen[h, :fom_cost_p_tonne_p_hr_yr]*eTotH2GenCap[h] for h in H))
@@ -233,9 +237,7 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
 )
 
 @expression(CEM, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
-                                    hsc_pipelines[i, :fom_per_length]*hsc_pipelines[i, :distance]*eTotH2Pipe[i] +
-                                    hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i] + 
-                                    hsc_pipelines[i, :fom_comp_p_tonne_hr]*eTotH2PipeCompCap[i] for i in I)
+                                    hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i] for i in I)
 )
 
 @expression(CEM, eCostH2GenVar, 
@@ -282,14 +284,20 @@ set_optimizer_attribute(CEM, "OptimalityTol", 1e-3)
                                           sum(vH2GenStart[h,w,t]*hsc_gen[h, :heat_rate_mmbtu_p_tonne]*CO2_content[hsc_gen[h, :fuel]] for h in H_ther, t in T)
 )
 
-@expression(CEM, ePowResReqUp[z in Z, w in W, t in T], 0.1 * eTotPowGenCapByZone[z])
-@expression(CEM, ePowResReqDn[z in Z, w in W, t in T], 0.05 * eTotPowGenCapByZone[z])
+@expression(CEM, ePowResReqUp[z in Z, w in W, t in T], 0.10 * pow_D[w,t,z])
+@expression(CEM, ePowResReqDn[z in Z, w in W, t in T], 0.05 * pow_D[w,t,z])
+
+#Lands Use Expressions
+@expression(CEM, eTotalLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z])
+
+# Slack variables for reserves
+@expression(CEM, eCostResSlack, sum(vSlackResUp[z,w,t]*zones[z,:voll_pow] + vSlackResDn[z,w,t]*zones[z,:voll_pow] for z in Z, w in W, t in T))
 
 #Defining Objective Function
 @expression(CEM, eEmissionCost, sum(vExtraEmmisionByWeek[w]*zones[1,:emission_cost] for w in W))
 
 obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ eCostPowStoVar .+ eCostPowNSD .+ eCostPowCrt .+ eCostPowGenStart).+ 
-      (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2StoVar.+ eCostH2TraVar .+ eCostH2NSD .+ eCostH2Crt.+ eCostH2GenStart) .+ eEmissionCost
+      (eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv .+ eCostH2GenVar .+ eCostH2StoVar.+ eCostH2TraVar .+ eCostH2NSD .+ eCostH2Crt.+ eCostH2GenStart) .+ eEmissionCost .+ eCostResSlack
 
 @objective(CEM, Min, obj) 
 
@@ -360,8 +368,8 @@ obj = (eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostPowGenVar .+ e
 @constraint(CEM, cPowResDnMax[g in G_ther, w in W,t in T], vPowResDn[g,w,t] .+ pow_gen[g, :rep_capacity]*pow_gen[g,:min_op_level]*vPowGenOnline[g,w,t] .- vPowGen[g,w,t] <= 0) 
 @constraint(CEM, cPowResUP[g in G_ther, w in W, t in T], vPowResUp[g,w,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_up] <=0)
 @constraint(CEM, cPowResDn[g in G_ther, w in W, t in T], vPowResDn[g,w,t] .- eTotPowGenCap[g]*pow_gen[g,:ramp_dn] <=0)
-@constraint(CEM, cPowResReqUp[z in Z, w in W, t in T], ePowResReqUp[z,w,t] .- sum(vPowResUp[g,w,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
-@constraint(CEM, cPowResReqDn[z in Z, w in W, t in T], ePowResReqDn[z,w,t] .- sum(vPowResDn[g,w,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther)<= 0)
+@constraint(CEM, cPowResReqUp[z in Z, w in W, t in T], ePowResReqUp[z,w,t] - sum(vPowResUp[g,w,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther) <= vSlackResUp[z,w,t])
+@constraint(CEM, cPowResReqDn[z in Z, w in W, t in T], ePowResReqDn[z,w,t] - sum(vPowResDn[g,w,t] * (pow_gen[g,:zone]==z ? 1 : 0) for g in G_ther) <= vSlackResDn[z,w,t])
 
 # Power Storage #
 @constraint(CEM, cMaxRetPowSto[s in S], vRetPowStoCap[s]*pow_gen[s, :rep_capacity] <= pow_gen[s, :existing_cap_mwh])
@@ -460,6 +468,12 @@ end)
 @constraint(CEM, cMaxH2StorCompcCap[s in Q], eTotH2StoCompCap[s]<= eTotH2StoCap[s])
 @constraint(CEM, cMinH2StorCompcCap[s in Q], 0.01*eTotH2StoCap[s] <= eTotH2StoCompCap[s])
 @constraint(CEM, cMaxH2StoChar[s in Q,w in W,t in T], vH2StoCha[s,w,t] <= eTotH2StoCompCap[s])
+@constraint(CEM, cH2SOC_FirstBind[s in Q, w in W],  vH2StoSOC[s,w,1]   == vH2StoSOCFirst[s,w])
+@constraint(CEM, cH2SOC_LastBind[s in Q, w in W],   vH2StoSOC[s,w,168] == vH2StoSOCLast[s,w])
+@constraint(CEM, cH2StoSOCLink[s in Q, w in 2:length(W)], vH2StoSOCFirst[s,w] == vH2StoSOCLast[s,w-1])
+@constraint(CEM, cH2StoSOCLinkCycle[s in Q],              vH2StoSOCFirst[s,1] == vH2StoSOCLast[s,52])
+@constraint(CEM, cH2SOCCapFirst[s in Q, w in W], vH2StoSOCFirst[s,w] <= eTotH2StoCap[s])
+@constraint(CEM, cH2SOCCapLast[s in Q, w in W],  vH2StoSOCLast[s,w]  <= eTotH2StoCap[s])
 
 # H2 Transmission constraints
 @constraint(CEM, cMaxH2PipeNum[i in I], eTotH2Pipe[i] <= hsc_pipelines[i, :max_num_pipes])
@@ -487,8 +501,172 @@ end)
 @constraint(CEM, cZonalEmissionCapByWeek[w in W], eEmissionByWeek[w] - vExtraEmmisionByWeek[w] <= vMaxEmissionByWeek[w])
 
 #Land Use Constraint on each zone
-@constraint(CEM, cLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z] <= zones[z, :available_land])
+@constraint(CEM, cLandUse[z in Z], eTotalLandUse[z] .- zones[z, :maximum_available_land]<=0 )
 
+#####################################
+#####################################
+function _is_pure_lp(model::Model)
+  for v in all_variables(model)
+      (JuMP.is_integer(v) || JuMP.is_binary(v)) && return false
+  end
+  return true
+end
+
+function _rel_gap(model::Model)
+  ts = termination_status(model)
+
+  # If it's a pure LP, there is no MIP bound; use OPTIMAL ⇒ 0.0, else Inf.
+  if _is_pure_lp(model)
+      return ts == MOI.OPTIMAL ? 0.0 : Inf
+  end
+
+  # MIP case: compute from incumbent and bound if available
+  has_vals = has_values(model)
+  obj = has_vals ? objective_value(model) : Inf
+
+  # Try ObjBound; if unavailable (early stop / infeasible / etc.), fall back gracefully
+  bnd = try
+      MOI.get(JuMP.backend(model), MOI.ObjectiveBound())
+  catch
+      # If we have an optimal integer solution, gap is 0; otherwise unknown ⇒ Inf
+      return (ts == MOI.OPTIMAL && isfinite(obj)) ? 0.0 : Inf
+  end
+
+  return (isfinite(obj) && isfinite(bnd) && obj != 0.0) ?
+      max(0.0, (obj - bnd) / max(1e-9, abs(obj))) : Inf
+end
+
+
+function simplex_then_barrier_for_investments!(
+  model::Model;
+  invest_vars::Vector{VariableRef},
+  gap::Float64 = 0.01,
+  use_dual_simplex::Bool = true,
+  relax_all_to_get_lp::Bool = false
+)
+  # --- record + relax only the requested investment vars ---
+  original_type = Dict{VariableRef,Symbol}()
+  for v in invest_vars
+      if is_binary(v)
+          original_type[v] = :Bin
+          unset_binary(v)
+      elseif is_integer(v)
+          original_type[v] = :Int
+          unset_integer(v)
+      else
+          original_type[v] = :Cont
+      end
+  end
+
+  # Optionally make Phase A a pure LP (so Simplex is genuinely used everywhere)
+  if relax_all_to_get_lp
+      for v in all_variables(model)
+          is_binary(v)  && unset_binary(v)
+          is_integer(v) && unset_integer(v)
+      end
+  end
+
+  # --- Phase A: (dual) simplex ---
+  set_optimizer_attribute(model, "Method", use_dual_simplex ? 1 : 0)  # 1=Dual, 0=Primal Simplex
+  set_optimizer_attribute(model, "NodeMethod", use_dual_simplex ? 1 : 0)  # if any MILP remains
+  set_optimizer_attribute(model, "MIPGap", gap)
+  optimize!(model)
+
+  gapA = _rel_gap(model)
+
+  # If the 1% target not reached (e.g., still a tough MILP because other ints remain), stop here.
+  if gapA > gap
+      return (phaseA_gap = gapA, phaseB_gap = NaN, status = termination_status(model))
+  end
+
+  # --- Phase B: restore integrality for the investment vars ---
+  if has_values(model)
+      for v in invest_vars
+          set_start_value(v, round(value(v)))  # warm start integers
+      end
+  end
+  for (v, ty) in original_type
+      ty === :Bin && set_binary(v)
+      ty === :Int && set_integer(v)
+  end
+
+  # Barrier + crossover OFF (as requested). Also force Barrier in MIP nodes.
+  set_optimizer_attribute(model, "Method", 2)        # 2 = Barrier at root
+  set_optimizer_attribute(model, "NodeMethod", 2)    # Barrier in nodes
+  set_optimizer_attribute(model, "Crossover", 0)     # no crossover
+  set_optimizer_attribute(model, "MIPGap", gap)
+  optimize!(model)
+
+  gapB = _rel_gap(model)
+  return (phaseA_gap = gapA, phaseB_gap = gapB, status = termination_status(model))
+end
+
+function _push_all_vars!(vars::Vector{VariableRef}, c)
+  if c isa VariableRef
+      push!(vars, c)
+  elseif c isa JuMP.Containers.DenseAxisArray
+      append!(vars, vec(c.data))           # key fix for DenseAxisArray
+  elseif c isa AbstractArray
+      append!(vars, vec(c))
+  elseif c isa AbstractDict
+      append!(vars, collect(values(c)))
+  else
+      # generic fallback
+      for v in c
+          v isa VariableRef && push!(vars, v)
+      end
+  end
+  return vars
+end
+
+function collect_investment_integer_vars(
+  vNewPowGenCap,  vRetPowGenCap,
+  vNewPowStoCap,  vRetPowStoCap,
+  vNewPowTraCap,
+  vNewH2GenCap,   vRetH2GenCap,
+  vNewH2StoCap,   vRetH2StoCap,
+  vNewH2Pipe,     vRetH2Pipe,
+  vNewH2PipeCompCap, vRetH2PipeCompCap,
+  vNewH2StoCompCap,  vRetH2StoCompCap
+)::Vector{VariableRef}
+  containers = (
+      vNewPowGenCap,  vRetPowGenCap,
+      vNewPowStoCap,  vRetPowStoCap,
+      vNewPowTraCap,
+      vNewH2GenCap,   vRetH2GenCap,
+      vNewH2StoCap,   vRetH2StoCap,
+      vNewH2Pipe,     vRetH2Pipe,
+      vNewH2PipeCompCap, vRetH2PipeCompCap,
+      vNewH2StoCompCap,  vRetH2StoCompCap
+  )
+  vars = VariableRef[]
+  for c in containers
+      _push_all_vars!(vars, c)
+  end
+  unique!(vars)  # avoid dups
+  filter!(v -> JuMP.is_integer(v) || JuMP.is_binary(v), vars)
+  return vars
+end
+invest_vars = collect_investment_integer_vars(
+    vNewPowGenCap,  vRetPowGenCap,
+    vNewPowStoCap,  vRetPowStoCap,
+    vNewPowTraCap,
+    vNewH2GenCap,   vRetH2GenCap,
+    vNewH2StoCap,   vRetH2StoCap,
+    vNewH2Pipe,     vRetH2Pipe,
+    vNewH2PipeCompCap, vRetH2PipeCompCap,
+    vNewH2StoCompCap,  vRetH2StoCompCap
+)
+
+res = simplex_then_barrier_for_investments!(
+    CEM;
+    invest_vars = invest_vars,
+    gap = 0.01,
+    use_dual_simplex = true,
+    relax_all_to_get_lp = false
+)
+
+#=
 
 try
   optimize!(CEM)
@@ -509,3 +687,4 @@ try
 catch e
   println("Optimization failed: ", e)
 end
+=#

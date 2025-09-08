@@ -151,8 +151,6 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
     @variable(MP, vRetH2PipeCompCap[i in I]>=0, Int)
     @variable(MP, vNewH2StoCompCap[s in Q]>=0, Int)
     @variable(MP, vRetH2StoCompCap[s in Q]>=0, Int)  
-    # ---- Lanc Coversion Variable ---- # 
-    @variable(MP, vLandConversion[z in Z]>=0)
     # ---- Emission Budget Variable ---- #
     @variable(MP, vMaxEmissionByWeek[w in W]>=0)
     # ---- Long-Term-Duration Storage ---- #
@@ -187,16 +185,12 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
                                      hsc_gen[s, :fom_cost_p_tonne_p_yr]*eTotH2StoCap[s] + hsc_gen[s, :fom_cost_comp_tonne_hr_p_yr]*eTotH2StoCompCap[s] for s in Q)
     )
     @expression(MP, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
-                                        hsc_pipelines[i, :fom_per_length]*hsc_pipelines[i, :distance]*eTotH2Pipe[i] +
-                                        hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i] + 
-                                        hsc_pipelines[i, :fom_comp_p_tonne_hr]*eTotH2PipeCompCap[i] for i in I)
+                                        hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i] for i in I)
     )
     @expression(MP, eTotalLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z])
-    @expression(MP, eTotalLandUseEff[z in Z], ePowGenLandUseEff[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z])
-    @expression(MP, eCostLandConversion, sum(vLandConversion[z]*zones[z,:land_conversion_cost_p_km2] for z in Z))
 
     # ---- MP Objective ---- # 
-    MP_obj = eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv + eCostLandConversion
+    MP_obj = eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv 
     @objective(MP, Min, MP_obj .+ sum(theta[w] for w in W))
 
     # ---- MP Constraints ---- #
@@ -227,10 +221,10 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
     @constraint(MP, cMaxH2PipeNum[i in I], eTotH2Pipe[i] <= hsc_pipelines[i, :max_num_pipes])
     @constraint(MP, cMaxRetH2PipeNum[i in I], vRetH2Pipe[i] <= hsc_pipelines[i, :existing_num_pipes])
     @constraint(MP, cMaxRetH2PipeCompCap[i in I], vRetH2PipeCompCap[i]<=hsc_pipelines[i, :existing_comp_cap_tonne_hr])
+    @constraint(MP, cMaxH2PipeComp[i in I], eTotH2PipeCompCap[i] <= eTotH2Pipe[i]*hsc_pipelines[i, :max_pipe_cap_tonne])
     #Land Use Constraint on each zone
     @constraint(MP, cLandUse[z in Z], eTotalLandUse[z] .- zones[z, :maximum_available_land]<=0 )
-    @constraint(MP, cLandUseConversion[z in Z], eTotalLandUseEff[z] - vLandConversion[z] <= zones[z, :available_land])
-    @constraint(MP, cMaxLandConversion[z in Z], vLandConversion[z] <= zones[z, :maximum_available_land]- zones[z, :available_land])
+
     #Policy
     @constraint(MP, cZonalEmissionCap, sum(vMaxEmissionByWeek[w] for w in W) <= 0.05*0.4*sum((h2_demand[w][t,z]*33.3) +pow_demand[w][t,z] for t in T, w in W, z in Z))
     #Long-Term-Duration Storage
@@ -238,6 +232,9 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
     @constraint(MP, cH2StoSOCLinkCycle[s in Q], vH2SOCFirst[s,1] == vH2SOCLast[s, 52])
     @constraint(MP, cH2SOCCapFirst[s in Q, w in W], vH2SOCFirst[s,w] <= eTotH2StoCap[s])
     @constraint(MP, cH2SOCCapLast[s in Q, w in W], vH2SOCLast[s,w] <= eTotH2StoCap[s])
+    
+    # Energy Portfolio Standard of 50%
+    @constraint(MP, cEPS, sum(eTotPowGenCap[g] for g in G_ther) <= 0.5*sum(eTotPowGenCap[g] for g in G))
 
     const ALPHA = 0.5                      
     integer_mode  = false      
@@ -724,6 +721,8 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
                 # use default branch-&-bound options if you like
                 set_optimizer_attribute(MP, "Method", 2)      
                 set_optimizer_attribute(MP, "Crossover", 0)
+                set_optimizer_attribute(MP,"MIPGap",1e-2)
+                set_optimizer_attribute(MP, "BarConvTol", 1e-2)
                 optimize!(MP)
             end
 

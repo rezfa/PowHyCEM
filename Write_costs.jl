@@ -275,7 +275,7 @@ function write_h2_pipe_costs(datadir,
     
         # COMPRESSOR side
         inv_comp   = hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]
-        fom_comp   = hsc_pipelines[i, :fom_comp_p_tonne_hr]*hsc_pipelines[i, :distance]
+        fom_comp   = 0
         
     
         new_comp_units = value(vNewH2PipeCompCap[i])

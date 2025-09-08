@@ -121,7 +121,6 @@ function write_LCOH(datadir,
     for i in sort(pipe_ids)
         # PIPE side: use per‐length cost × distance
         inv_pipe    = hsc_pipelines[i, :investment_cost_per_length] * hsc_pipelines[i, :distance]
-        fom_pipe    = hsc_pipelines[i, :fom_per_length]            * hsc_pipelines[i, :distance]
         vom_pipe    = hsc_pipelines[i, :vom_per_tonne]
 
         new_pipe_units = value(vNewH2Pipe[i])
@@ -130,7 +129,6 @@ function write_LCOH(datadir,
         total_pipe_units = existing_pipes + new_pipe_units - ret_pipe_units
 
         pipeline_cost += inv_pipe * new_pipe_units
-        pipeline_cost += fom_pipe * total_pipe_units
 
         net_sum = 0.0
         for (w, t) in timesteps
