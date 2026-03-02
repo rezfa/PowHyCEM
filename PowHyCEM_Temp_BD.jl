@@ -21,8 +21,8 @@ k = 1
 max_iter = 5000
 tolerence = 1e-2
 gap = (UB - LB) / max(1e-6, abs(LB))
- 
-datadir = joinpath("/Users/rez/Documents/Engineering/Coding/Julia/My Model/PowHyCEM/Input_Data")
+    
+datadir = joinpath("Input_Data")
  # ---------- 1.  raw tables ------------------------------------------------
 pow_gen       = CSV.read(joinpath(datadir, "Powe_Gen_Data.csv"),  DataFrame)
 pow_gen_var   = CSV.read(joinpath(datadir, "Pow_Gen_Var.csv"),    DataFrame)
@@ -169,6 +169,7 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
     @expression(MP, eTotH2Pipe[i in I], hsc_pipelines[i, :existing_num_pipes] + vNewH2Pipe[i] - vRetH2Pipe[i])
     @expression(MP, ePowGenLandUse[z in Z], sum((vNewPowGenCap[g] - vRetPowGenCap[g])*pow_gen[g, :rep_capacity]*pow_gen[g, :total_land_use_km2_p_cap]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G))
     @expression(MP, ePowStoLandUse[z in Z], sum((vNewPowStoCap[s] - vRetPowStoCap[s])*pow_gen[s, :rep_capacity]*pow_gen[s, :total_land_use_km2_p_cap]*(pow_gen[s,:zone]==z ? 1 : 0) for s in S))
+    @expression(MP, ePowLineLandUse[z in Z], 0.5 * sum(pow_lines[l, :total_land_use_km2_p_length]*pow_lines[l, :distance_km]*(vNewPowTraCap[l])*abs(Pow_Network[l,z]) for l in L))
     @expression(MP, eH2GenLandUse[z in Z], sum((vNewH2GenCap[h]-vRetH2GenCap[h])*hsc_gen[h, :rep_capacity]*hsc_gen[h, :total_land_use_km2_p_cap]*(hsc_gen[h,:zone]==z ? 1 : 0) for h in H))
     @expression(MP, eH2StoLandUse[z in Z], sum((vNewH2StoCap[s]-vRetH2StoCap[s])* hsc_gen[s, :total_land_use_km2_p_cap]*(hsc_gen[s,:zone]==z ? 1 : 0) for s in Q))
     @expression(MP, eH2PipeLandUse[z in Z],0.5 * sum(hsc_pipelines[i, :total_land_use_km2_p_length]*hsc_pipelines[i, :distance]*(vNewH2Pipe[i]-vRetH2Pipe[i])*abs(H2_Network[i,z]) for i in I))
@@ -186,7 +187,7 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
     @expression(MP, eCostH2TraInv, sum(hsc_pipelines[i, :investment_cost_per_length]*hsc_pipelines[i, :distance]*vNewH2Pipe[i] +
                                         hsc_pipelines[i, :compressor_inv_per_length]*hsc_pipelines[i, :distance]*vNewH2PipeCompCap[i]  for i in I)
     )
-    @expression(MP, eTotalLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z])
+    @expression(MP, eTotalLandUse[z in Z], ePowGenLandUse[z] + ePowStoLandUse[z] + ePowLineLandUse[z] + eH2GenLandUse[z] + eH2StoLandUse[z] + eH2PipeLandUse[z])
 
     # ---- MP Objective ---- # 
     MP_obj = eCostPowGenInv .+ eCostPowStoInv .+ eCostPowTraInv .+ eCostH2GenInv .+ eCostH2StoInv .+ eCostH2TraInv 
@@ -518,6 +519,7 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
         # Policy constraints
         #@constraint(SP_models[w], cPowNSD[z in Z, t in T], vPowNSD[z,t] .- zones[z, :pow_nsd_share]*pow_D[t,z] <= 0 )
         #@constraint(SP_models[w], cH2NSD[z in Z, t in T], vH2NSD[z,t] .- zones[z, :hsc_nsd_share]*H2_D[w, t,z] <= 0)
+        @constraint(SP_models[w], cPowCrt[z in Z, t in T], vPowCrt[z,t] .- sum(vPowGen[g,t]*(pow_gen[g,:zone]==z ? 1 : 0) for g in G) <= 0)
         #Emission constraint
         @constraint(SP_models[w], cEmissionCapByWeek, eEmissionByWeek .- vExtraEmission .- eMaxEmissionByWeek<= 0)
     end
@@ -710,7 +712,7 @@ zones         = CSV.read(joinpath(datadir, "Zone_Char.csv"),      DataFrame)
 
 
             # if gap small enough  ➜  switch to MILP stage
-            if (UB - LB)/abs(LB) < 0.08    #  < 1 %
+            if (UB - LB)/abs(LB) < 0.01    #  < 1 %
                 println("→  switching to integer mode (gap < 1 %)")
                 # (i) drop the level-set cut
                 delete(MP, LEVELSET_CON[]); LEVELSET_CON[] = nothing
