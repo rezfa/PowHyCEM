@@ -18,7 +18,7 @@ PowHyCEM/
 └── src/                   # Model formulation, Benders algorithm, and output routines
 
 
-The main components under src/ include:
+## The main components under src/ include:
 
 Config.jl – algorithm and solver settings
 Data_loading.jl – input-data loading and preprocessing
