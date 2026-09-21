@@ -195,42 +195,6 @@ The output routines contained in `src/` process the main model results, includin
 
 ---
 
-## Reviewer Guidance
-
-Reviewers interested primarily in reproducing the numerical experiments can use the following workflow:
-
-```bash
-git clone https://github.com/rezfa/PowHyCEM.git
-cd PowHyCEM
-julia PowHyCEM_BD.jl
-```
-
-No modification of the source code or input datasets is required to reproduce the baseline implementation.
-
-For inspection of individual components:
-
-```text
-Input_Data/              → Input assumptions and datasets
-src/Config.jl            → Solver and algorithm settings
-src/Master_problem.jl    → Capacity-expansion decisions
-src/Sub_problem.jl       → Hourly operational formulation
-src/Benders_loop.jl      → Decomposition algorithm
-PowHyCEM_BD.jl           → Complete model workflow
-```
-
----
-
-## Citation
-
-If you use PowHyCEM in academic work, please cite:
-
-> R. Fardi Asrami, A.T.D. Perera, C. Zuidema, and E. Ursavas,  
-> **“When land becomes the bottleneck: Spatial feasibility determines decarbonization pathways.”**
-
-Citation information will be updated following publication.
-
----
-
 ## Contact
 
 For questions regarding the model, input data, or reproduction of the results:
