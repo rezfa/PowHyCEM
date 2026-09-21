@@ -16,3 +16,28 @@ PowHyCEM/
 ├── PowHyCEM_BD.jl        # Main execution file
 ├── Input_Data/            # Model input CSV files
 └── src/                   # Model formulation, Benders algorithm, and output routines
+
+
+The main components under src/ include:
+
+Config.jl – algorithm and solver settings
+Data_loading.jl – input-data loading and preprocessing
+Master_problem.jl – investment/master problem
+Sub_problem.jl – weekly operational subproblems
+Benders_loop.jl – regularized temporal multi-cut Benders algorithm
+Output.jl and Write_*.jl – result processing and export
+Requirements
+
+The model was developed and tested using:
+
+Julia 1.9.2
+Gurobi 12.0.1
+JuMP
+CSV
+DataFrames
+Plots
+Measures
+
+A valid Gurobi license is required.
+
+Required Julia packages can be installed from the Julia package manager:
